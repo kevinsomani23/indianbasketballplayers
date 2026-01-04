@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Tappa Pro Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="static/js/data.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { brand: '#d16b07', dark: '#09090b', panel: '#18181b', accent: '#3b82f6' } } }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #09090b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46;
+        }
+
+        .tab-btn {
+            transition: all 0.2s;
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-dark text-white min-h-screen font-sans selection:bg-brand selection:text-white">
+
+    <nav class="border-b border-white/10 bg-dark/95 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <img src="assets/tappa/logo.svg" alt="Tappa Logo" class="h-8 w-auto">
+            </div>
+            <div class="flex items-center gap-6 text-xs font-mono text-gray-400">
+                <div class="flex flex-col text-right">
+                    <span class="text-xs">PLAYERS</span>
+                    <b class="text-white text-sm" id="stat-count">-</b>
+                </div>
+                <div class="h-8 w-px bg-white/10"></div>
+                <div class="flex flex-col text-right">
+                    <span class="text-xs">LAST UPDATE</span>
+                    <b class="text-white text-sm" id="stat-date">-</b>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-6 py-8">
+
+        <!-- CONTROLS -->
+        <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-6">
+            <div>
+                <h2 class="text-2xl font-bold mb-2">TournamentHub</h2>
+                <p class="text-gray-400 text-sm max-w-lg">Advanced statistics, lineup tracking, and match performance
+                    metrics for the entire tournament.</p>
+            </div>
+            <div class="flex gap-3">
+                <div class="relative group">
+                    <select id="team-select" onchange="currentTeam=this.value; render();"
+                        class="appearance-none bg-panel border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm font-medium focus:border-brand focus:ring-1 focus:ring-brand outline-none cursor-pointer hover:border-white/20 transition-colors w-48">
+                        <option value="All Teams">All Teams</option>
+                    </select>
+                    <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">▼</div>
+                </div>
+                <a href="social.html"
+                    class="bg-white text-dark px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors shadow-lg shadow-white/5 no-underline flex items-center">
+                    Social Studio
+                </a>
+            </div>
+        </div>
+
+        <!-- HIGHLIGHTS TICKER -->
+        <!-- HIGHLIGHTS TICKER (Removed) -->
+        <!-- <div id="highlights-container" class="mb-8 hidden">...</div> -->
+
+        <!-- TABS -->
+        <!-- ANALYSIS TOOLS -->
+        <div id="filter-controls"
+            class="flex flex-col gap-3 mb-4 p-4 bg-zinc-900/80 rounded-xl border border-white/10 backdrop-blur-md shadow-2xl animate-fade-in">
+
+            <!-- TOP ROW: MAIN CONTEXT -->
+            <div class="flex flex-wrap items-center gap-4 justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-zinc-500">View</span>
+                    <div class="flex bg-black/50 rounded-lg p-1 border border-white/5 gap-1">
+                        <button onclick="switchTab('matches')" id="tab-matches"
+                            class="nav-btn px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all">Matches</button>
+                        <button onclick="switchTab('teams')" id="tab-teams"
+                            class="nav-btn px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all">Teams</button>
+                        <button onclick="switchTab('basic')" id="tab-basic"
+                            class="nav-btn px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all">Players</button>
+
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Split</span>
+                    <div class="flex bg-black/50 rounded-lg p-1 border border-white/5 gap-1">
+                        <button onclick="setSplit('total')" id="split-total"
+                            class="split-btn px-4 py-1.5 text-xs font-bold rounded-md transition-all">Totals</button>
+                        <button onclick="setSplit('per_game')" id="split-per_game"
+                            class="split-btn px-4 py-1.5 text-xs font-bold rounded-md transition-all">Per Game</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECOND ROW: SUB TABS (Dynamic) -->
+            <div id="sub-controls" class="flex items-center gap-4 pt-3 border-t border-white/5">
+                <div id="player-subtabs" class="flex items-center gap-2 hidden">
+                    <span class="text-[10px] uppercase font-bold tracking-widest text-zinc-500 mr-2">Stats</span>
+                    <button onclick="switchSubTab('basic')" id="sub-basic"
+                        class="sub-btn px-3 py-1 rounded text-xs font-bold uppercase text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-transparent">Basic</button>
+                    <button onclick="switchSubTab('advanced')" id="sub-advanced"
+                        class="sub-btn px-3 py-1 rounded text-xs font-bold uppercase text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-transparent">Advanced</button>
+                    <button onclick="switchSubTab('scoring')" id="sub-scoring"
+                        class="sub-btn px-3 py-1 rounded text-xs font-bold uppercase text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-transparent">Scoring</button>
+                    <button onclick="switchSubTab('usage')" id="sub-usage"
+                        class="sub-btn px-3 py-1 rounded text-xs font-bold uppercase text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-transparent">Usage</button>
+                    <div class="h-4 w-px bg-white/10 mx-2"></div>
+                    <button onclick="setContext('regular')" id="ctx-regular"
+                        class="ctx-btn px-3 py-1 text-[10px] font-bold rounded uppercase text-gray-500 border border-white/5">Reg</button>
+                    <button onclick="setContext('clutch')" id="ctx-clutch"
+                        class="ctx-btn px-3 py-1 text-[10px] font-bold rounded uppercase text-gray-500 border border-white/5">Clutch</button>
+                    <button onclick="setContext('garbage')" id="ctx-garbage"
+                        class="ctx-btn px-3 py-1 text-[10px] font-bold rounded uppercase text-gray-500 border border-white/5">Garbage</button>
+                </div>
+
+
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div id="content-area" class="animate-fade-in min-h-[500px]">
+            <!-- Tables injected here -->
+        </div>
+
+
+
+        <!-- MODAL: MATCH DETAIL -->
+        <div id="match-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden z-[100] p-6 overflow-y-auto">
+            <div
+                class="max-w-6xl mx-auto bg-dark border border-white/10 rounded-xl shadow-2xl min-h-[80vh] flex flex-col animate-fade-in">
+                <!-- Header -->
+                <div
+                    class="px-8 py-6 border-b border-white/10 flex justify-between items-start bg-zinc-900/50 rounded-t-xl sticky top-0 z-10 backdrop-blur">
+                    <div>
+                        <h2 class="text-3xl font-black italic tracking-tighter" id="m-title">TEAM A vs TEAM B</h2>
+                        <div class="flex gap-4 mt-2 text-sm font-mono text-gray-400" id="m-meta">
+                            <span>PACE: 00.0</span> <span class="text-white/20">|</span>
+                            <span>POSS: 00.0</span> <span class="text-white/20">|</span>
+                            <span>SCORE: 00-00</span>
+                        </div>
+                    </div>
+                    <button onclick="closeMatch()"
+                        class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Content -->
+                <div class="p-8 space-y-10">
+
+                    <!-- Box Score -->
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-brand">Box Score</h3>
+                        <div class="overflow-x-auto bg-panel rounded-lg border border-white/5">
+                            <table class="w-full text-left text-sm" id="m-box"></table>
+                        </div>
+                    </div>
+
+                    <!-- Advanced -->
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-accent">Advanced Stats</h3>
+                        <div class="overflow-x-auto bg-panel rounded-lg border border-white/5">
+                            <table class="w-full text-left text-sm" id="m-adv"></table>
+                        </div>
+                    </div>
+
+
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let currentTab = 'basic';
+        let currentSubTab = 'basic';
+
+        let currentTeam = 'All Teams';
+        let cardTheme = 'dark';
+        let sortKey = 'PTS';
+        let sortDesc = true;
+
+        // Filter States
+        let currentContext = 'all';
+        let currentSplit = 'total';
+
+        // Helper: Format
+        const f = (n) => n !== undefined ? n : '-';
+
+        function init() {
+            if (typeof TOURNAMENT_DATA === 'undefined') {
+                document.getElementById('content-area').innerHTML = `<div class="p-10 text-center text-gray-500">Error: data.js not loaded.</div>`;
+                return;
+            }
+
+            // Stats
+            document.getElementById('stat-count').innerText = TOURNAMENT_DATA.stats.length;
+            document.getElementById('stat-date').innerText = new Date(TOURNAMENT_DATA.generated_at).toLocaleDateString();
+
+            // Populate Teams
+            const teams = [...new Set(TOURNAMENT_DATA.stats.map(s => s.Team))].sort();
+            const sel = document.getElementById('team-select');
+            teams.forEach(t => {
+                let o = document.createElement('option');
+                o.value = t; o.innerText = t; sel.appendChild(o);
+            });
+
+            render();
+
+            // Highlights (Disabled)
+            /*
+            const top5 = TOURNAMENT_DATA.media_moments || [];
+            if (top5.length > 0) {
+                 const c = document.getElementById('highlights-container');
+                    const l = document.getElementById('highlights-list');
+                    if(c && l) {
+                        c.classList.remove('hidden');
+                     l.innerHTML = top5.map(m => `...`).join('');
+                 }
+            }
+                    */
+        }
+
+
+
+        // --- ACTIONS ---
+        function switchSubTab(t) {
+            currentSubTab = t;
+            // Update UI
+            document.querySelectorAll('.sub-btn').forEach(b => {
+                const active = b.id === 'sub-' + t;
+                b.className = active
+                    ? "sub-btn px-3 py-1 rounded text-xs font-bold uppercase bg-white/10 text-white border border-white/20 transition-all"
+                    : "sub-btn px-3 py-1 rounded text-xs font-bold uppercase text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-transparent";
+            });
+            render();
+        }
+
+
+
+        function setContext(c) {
+            currentContext = c;
+            document.querySelectorAll('.ctx-btn').forEach(b => {
+                const active = b.id === 'ctx-' + c;
+                if (active) b.classList.add('bg-brand', 'text-white', 'border-brand');
+                else b.classList.remove('bg-brand', 'text-white', 'border-brand');
+            });
+            render();
+        }
+
+        function setSplit(s) {
+            currentSplit = s;
+            document.querySelectorAll('.split-btn').forEach(b => {
+                const active = b.id === 'split-' + s;
+                if (active) b.classList.add('bg-white', 'text-dark');
+                else b.classList.remove('bg-white', 'text-dark');
+                if (!active) b.classList.add('text-gray-400');
+                else b.classList.remove('text-gray-400');
+            });
+            render();
+        }
+
+        function closeMatch() {
+            document.getElementById('match-modal').classList.add('hidden');
+        }
+
+        function openMatch(mid) {
+            const m = TOURNAMENT_DATA.matches[mid];
+            if (!m) return;
+            const modal = document.getElementById('match-modal');
+            modal.classList.remove('hidden');
+
+            document.getElementById('m-title').innerText = `${m.Team1} vs ${m.Team2}`;
+            document.getElementById('m-meta').innerHTML = `
+                <span class="text-accent font-bold">POSS: ${m.POSS}</span> <span class="text-white/20 mx-2">|</span> 
+                <span>PACE: ${m.PACE}</span> <span class="text-white/20 mx-2">|</span> 
+                <span class="text-white font-bold text-lg">${m.Score}</span>
+            `;
+
+            // Filter Data for this Match
+            // Box Score
+            const box = (TOURNAMENT_DATA.box_scores || []).filter(s => String(s['Match ID']) === String(mid));
+            renderSimpleTable('m-box', box, [
+                { k: 'Player', l: 'Player', w: 'w-32' }, { k: 'MIN', l: 'MIN' }, { k: 'PTS', l: 'PTS', h: true },
+                { k: 'REB', l: 'REB' }, { k: 'AST', l: 'AST' }, { k: 'STL', l: 'STL' }, { k: 'BLK', l: 'BLK' }
+            ]);
+
+            // Advanced
+            // Try to find advanced stats if available, otherwise reuse box
+            // In engine, we saved advanced_stats.csv, but did we put it in JS? 
+            // Providing box score with adv cols if separate array not found.
+            renderSimpleTable('m-adv', box, [
+                { k: 'Player', l: 'Player', w: 'w-32' }, { k: 'TS%', l: 'TS%' }, { k: 'eFG%', l: 'eFG%' },
+                { k: 'USG%', l: 'USG%' }, { k: 'OFFRTG', l: 'OFF' }, { k: 'NETRTG', l: 'NET', color: true }
+            ]);
+
+
+        }
+
+        function renderSimpleTable(id, data, cols) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (!data || data.length === 0) { el.innerHTML = '<div class="p-4 text-gray-500 italic">No data</div>'; return; }
+
+            let html = `<thead class="bg-white/5 border-b border-white/10 text-xs uppercase text-gray-400"><tr>`;
+            cols.forEach(c => html += `<th class="p-3 ${c.w || ''}">${c.l}</th>`);
+            html += `</tr></thead><tbody class="divide-y divide-white/5">`;
+
+            data.forEach(row => {
+                html += `<tr class="hover:bg-white/5">`;
+                cols.forEach(c => {
+                    let val = row[c.k];
+                    if (val === undefined) val = '-';
+                    let cl = "p-3 " + (c.color ? (val > 0 ? 'text-green-400' : (val < 0 ? 'text-red-400' : 'text-gray-400')) : (c.h ? 'text-brand font-bold' : 'text-gray-300'));
+                    if (c.k === 'Lineup') cl += ' leading-tight';
+                    html += `<td class="${cl}">${val}</td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody>`;
+            el.innerHTML = html;
+        }
+
+        // --- UI UPDATES ---
+        function updateControls() {
+            // Hide all sub-controls first
+            ['player-subtabs'].forEach(id => document.getElementById(id).classList.add('hidden'));
+
+            // Show relevant
+            if (currentTab === 'basic' || currentTab === 'teams') { // Players OR Teams
+                document.getElementById('player-subtabs').classList.remove('hidden');
+            }
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            // Update Tab Buttons
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                const active = b.id === `tab-${tab}`;
+                b.className = active
+                    ? "nav-btn px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all bg-brand text-white shadow-lg shadow-brand/20"
+                    : "nav-btn px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all bg-transparent text-gray-400 hover:text-white";
+            });
+            updateControls();
+            render();
+        }
+
+        // --- RENDER LOGIC ---
+        function render() {
+            const content = document.getElementById('content-area');
+            content.innerHTML = '';
+            let data = [];
+            let cols = [];
+
+            // 1. MATCHES (Cards View)
+            if (currentTab === 'matches') {
+                const matches = Object.values(TOURNAMENT_DATA.matches || {}).sort((a, b) => b.MatchId - a.MatchId);
+                if (matches.length === 0) {
+                    content.innerHTML = `<div class="p-8 text-center text-gray-500 italic">No matches found.</div>`;
+                    return;
+                }
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6";
+                grid.innerHTML = matches.map(m => `
+                    <div onclick="openMatch('${m.MatchId}')" class="bg-panel border border-white/5 rounded-xl p-6 hover:border-brand/50 cursor-pointer transition-all group relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-br from-brand/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="relative z-10">
+                            <h3 class="text-lg font-black italic text-white mb-1 group-hover:text-brand transition-colors">${m.Team1} vs ${m.Team2}</h3>
+                            <div class="text-2xl font-mono font-bold text-white mb-4 tracking-tighter">${m.Score}</div>
+                            <div class="flex items-center gap-4 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <span>Pace: ${m.PACE}</span>
+                                <span>Poss: ${m.POSS}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                content.appendChild(grid);
+                return;
+            }
+
+            // 2. TEAMS (Table View)
+            if (currentTab === 'teams') {
+                data = TOURNAMENT_DATA.team_stats || [];
+
+                // Cols based on SubTab
+                if (currentSubTab === 'basic') {
+                    cols = [
+                        { k: 'Team', l: 'Team' },
+                        { k: 'GP', l: 'GP', r: 1 },
+                        { k: 'PTS', l: 'PTS', r: 1, h: 1 },
+                        { k: 'TRB', l: 'REB', r: 1 },
+                        { k: 'AST', l: 'AST', r: 1 },
+                        { k: 'STL', l: 'STL', r: 1 },
+                        { k: 'BLK', l: 'BLK', r: 1 },
+                        { k: 'PlusMinus', l: '+/-', r: 1, color: true },
+                        { k: 'FG%', l: 'FG%', r: 1 },
+                        { k: '3P%', l: '3P%', r: 1 }
+                    ];
+                    if (sortKey === 'PTS') data.sort((a, b) => b.PTS - a.PTS);
+                } else if (currentSubTab === 'advanced') {
+                    cols = [
+                        { k: 'Team', l: 'Team' },
+                        { k: 'OFFRTG', l: 'OFF RTG', r: 1 },
+                        { k: 'NETRTG', l: 'NET RTG', r: 1, color: true },
+                        { k: 'TS%', l: 'TS%', r: 1 },
+                        { k: 'eFG%', l: 'eFG%', r: 1 },
+                        { k: 'AST_Ratio', l: 'AST RATIO', r: 1 },
+                        { k: 'TO_Ratio', l: 'TO RATIO', r: 1 }
+                    ];
+                } else if (currentSubTab === 'scoring') {
+                    cols = [
+                        { k: 'Team', l: 'Team' },
+                        { k: 'PTS', l: 'PTS', r: 1, h: 1 },
+                        { k: 'FGM', l: 'FGM', r: 1 },
+                        { k: 'FGA', l: 'FGA', r: 1 },
+                        { k: '3PM', l: '3PM', r: 1 },
+                        { k: '3PA', l: '3PA', r: 1 },
+                        { k: 'FTM', l: 'FTM', r: 1 }
+                    ];
+                } else if (currentSubTab === 'usage') {
+                    cols = [
+                        { k: 'Team', l: 'Team' },
+                        { k: 'AST_Ratio', l: 'AST RATIO', r: 1 },
+                        { k: 'TO_Ratio', l: 'TO RATIO', r: 1 },
+                        { k: 'POSS', l: 'POSS', r: 1 }
+                    ];
+                }
+            }
+
+
+
+            // 4. PLAYERS (Table View)
+            else {
+                // Source
+                if (currentContext === 'clutch') data = TOURNAMENT_DATA.clutch_stats || [];
+                else if (currentContext === 'garbage') data = TOURNAMENT_DATA.garbage_stats || [];
+                else data = TOURNAMENT_DATA.stats || [];
+
+                // Per Game Logic
+                if (currentSplit === 'per_game') {
+                    data = data.map(row => {
+                        const gp = row.GP || 1;
+                        if (gp <= 1) return row;
+                        let newRow = { ...row };
+                        ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'FGM', 'FGA', '3PM', '3PA', 'FTM', 'FTA', 'DQ', 'DD2', 'TD3', 'FP'].forEach(k => {
+                            if (typeof newRow[k] === 'number') newRow[k] = Math.round((newRow[k] / gp) * 10) / 10;
+                        });
+                        return newRow;
+                    });
+                }
+
+                // Cols
+                if (currentSubTab === 'basic') {
+                    cols = [
+                        { k: 'Player', l: 'Player', type: 'text', w: 'w-48' },
+                        { k: 'Team', l: 'Team', type: 'text' },
+                        { k: 'GP', l: 'GP', r: 1 },
+                        { k: 'MIN', l: 'MIN', r: 1 },
+                        { k: 'PTS', l: 'PTS', r: 1, h: 1 },
+                        { k: 'TRB', l: 'REB', r: 1 },
+                        { k: 'AST', l: 'AST', r: 1 },
+                        { k: 'STL', l: 'STL', r: 1 },
+                        { k: 'BLK', l: 'BLK', r: 1 },
+                        { k: 'TOV', l: 'TOV', r: 1 },
+                        { k: 'PlusMinus', l: '+/-', r: 1, color: true },
+                        { k: 'FP', l: 'FP', r: 1, dim: true }
+                    ];
+                    if (sortKey === 'PTS') data.sort((a, b) => b.PTS - a.PTS);
+                } else if (currentSubTab === 'advanced') {
+                    cols = [
+                        { k: 'Player', l: 'Player', w: 'w-48' },
+                        { k: 'Team', l: 'Team' },
+                        { k: 'MIN', l: 'MIN', r: 1 },
+                        { k: 'OFFRTG', l: 'OFF RTG', r: 1 },
+                        { k: 'NETRTG', l: 'NET RTG', r: 1, color: true },
+                        { k: 'TS%', l: 'TS%', r: 1 },
+                        { k: 'eFG%', l: 'eFG%', r: 1 },
+                        { k: 'USG%', l: 'USG%', r: 1 },
+                        { k: 'PIE', l: 'PIE', r: 1 }
+                    ];
+                } else if (currentSubTab === 'scoring') {
+                    cols = [
+                        { k: 'Player', l: 'Player', w: 'w-48' },
+                        { k: 'PTS', l: 'PTS', r: 1, h: 1 },
+                        { k: '%PTS_2PT', l: '% PTS 2PT', r: 1 },
+                        { k: '%PTS_3PT', l: '% PTS 3PT', r: 1 },
+                        { k: '%PTS_FT', l: '% PTS FT', r: 1 },
+                        { k: 'FGM', l: 'FGM', r: 1 },
+                        { k: '3PM', l: '3PM', r: 1 },
+                        { k: 'FTM', l: 'FTM', r: 1 }
+                    ];
+                } else if (currentSubTab === 'usage') {
+                    cols = [
+                        { k: 'Player', l: 'Player', w: 'w-48' },
+                        { k: 'USG%', l: 'USG%', r: 1, h: 1 },
+                        { k: '%FGA_2PT', l: '% FGA 2PT', r: 1 },
+                        { k: '%FGA_3PT', l: '% FGA 3PT', r: 1 },
+                        { k: 'AST_Ratio', l: 'AST RATIO', r: 1 },
+                        { k: 'TO_Ratio', l: 'TO RATIO', r: 1 }
+                    ];
+                }
+            }
+
+            // --- FILTER: TEAM ---
+            if (currentTeam !== 'All Teams' && currentTab !== 'matches') {
+                data = data.filter(row => row.Team === currentTeam);
+            }
+
+            // --- RENDER TABLE ---
+            if (!data || data.length === 0) {
+                content.innerHTML = `<div class="p-10 text-center text-gray-500 italic">No data available for these filters.</div>`;
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = "w-full text-left border-collapse";
+
+            let thead = `<thead><tr class="text-xs uppercase text-gray-400 border-b border-white/10 bg-white/5">`;
+            cols.forEach(c => {
+                thead += `<th class="p-4 font-bold tracking-wider cursor-pointer hover:text-white transition-colors ${c.r ? 'text-right' : ''} ${c.w || ''}" onclick="sortKey='${c.k}'; render()">${c.l}</th>`;
+            });
+            thead += `</tr></thead>`;
+
+            let tbody = `<tbody class="text-sm divide-y divide-white/5">`;
+            data.forEach(row => {
+                let rowHtml = `<tr class="hover:bg-white/5 transition-colors cursor-pointer group" onclick="if('${row.Player}') window.location.href='social.html?player='+encodeURIComponent('${(row.Player || '').replace(/'/g, "\\'")}')">`;
+                cols.forEach(c => {
+                    let val = row[c.k];
+                    if (val === undefined) val = '-';
+
+                    let classes = `p-4 ${c.r ? 'text-right font-mono' : ''} ${c.w || ''}`;
+                    if (c.color) {
+                        if (parseFloat(val) > 0) classes += " text-green-500 font-bold";
+                        else if (parseFloat(val) < 0) classes += " text-red-500 font-bold";
+                        else classes += " text-gray-400";
+                    } else if (c.h) {
+                        classes += " text-brand font-bold";
+                    } else if (c.dim) {
+                        classes += " text-gray-500";
+                    } else {
+                        classes += " text-gray-300";
+                    }
+
+                    if (c.k === 'PlusMinus' && val > 0) val = '+' + val;
+                    if (c.k === 'Team') classes += " text-[10px] uppercase tracking-widest text-gray-500";
+                    if (c.k === 'Player') classes = "p-4 font-bold text-white group-hover:text-brand transition-colors " + (c.w || '');
+
+                    rowHtml += `<td class="${classes}">${val}</td>`;
+                });
+                rowHtml += `</tr>`;
+                tbody += rowHtml;
+            });
+            tbody += `</tbody>`;
+
+            table.innerHTML = thead + tbody;
+            content.appendChild(table);
+        }
+
+
+
+
+
+        init();
+    </script>
+</body>
+
+</html>

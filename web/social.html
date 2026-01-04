@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Social Studio | Tappa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="static/js/data.js"></script>
+    <script src="static/js/logos.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { brand: '#d16b07', dark: '#09090b', panel: '#18181b', accent: '#3b82f6' } } }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: #050505;
+            color: #fff;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen p-8 bg-dark text-white font-sans selection:bg-brand selection:text-white">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8 max-w-7xl mx-auto">
+        <a href="hub.html" class="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Back to Hub</span>
+        </a>
+        <h1 class="text-2xl font-bold tracking-tight">SOCIAL STUDIO</h1>
+        <div class="w-20"></div>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+            <div class="lg:col-span-4 space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold mb-2">Social Studio</h3>
+                    <p class="text-gray-400 text-sm">Generate pro-grade graphics for social media sharing.</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Graphic Type</label>
+                        <select id="graphic-type" onchange="toggleInputs(); renderCard()"
+                            class="w-full bg-panel border border-white/10 rounded-lg p-3 text-sm focus:border-brand outline-none text-white">
+                            <option value="player">Player Stat Card</option>
+                            <option value="match">Match Result</option>
+
+                        </select>
+                    </div>
+
+                    <div id="input-player" class="space-y-2">
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Select Player</label>
+                        <select id="social-player" onchange="renderCard()"
+                            class="w-full bg-panel border border-white/10 rounded-lg p-3 text-sm focus:border-brand outline-none text-white"></select>
+                    </div>
+
+                    <div id="input-match" class="space-y-2 hidden">
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Select Match</label>
+                        <select id="social-match" onchange="renderCard()"
+                            class="w-full bg-panel border border-white/10 rounded-lg p-3 text-sm focus:border-brand outline-none text-white"></select>
+                    </div>
+
+
+                </div>
+
+                <div class="p-4 bg-panel rounded-lg border border-white/5 space-y-4">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-400">Theme</span>
+                        <div class="flex gap-2">
+                            <button onclick="cardTheme='dark'; renderCard()"
+                                class="w-4 h-4 rounded-full bg-zinc-900 border border-white/20 hover:scale-110 transition-transform"></button>
+                            <button onclick="cardTheme='light'; renderCard()"
+                                class="w-4 h-4 rounded-full bg-white border border-white/20 hover:scale-110 transition-transform"></button>
+                            <button onclick="cardTheme='brand'; renderCard()"
+                                class="w-4 h-4 rounded-full bg-brand border border-white/20 hover:scale-110 transition-transform"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="downloadCard()"
+                    class="w-full bg-brand text-white font-bold py-3.5 rounded-lg hover:bg-orange-600 transition-all shadow-lg shadow-brand/20 flex items-center justify-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download PNG
+                </button>
+            </div>
+
+            <div
+                class="lg:col-span-8 flex items-center justify-center bg-[#050505] rounded-xl border border-white/5 p-8 overflow-hidden relative">
+                <div class="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20">
+                </div>
+
+                <!-- CARD -->
+                <div id="card"
+                    class="w-[600px] h-[750px] bg-zinc-900 relative shadow-2xl flex overflow-hidden shrink-0">
+                    <!-- Dynamic Content Injected JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cardTheme = 'dark';
+
+        window.onload = function () {
+            if (typeof TOURNAMENT_DATA === 'undefined') {
+                document.body.innerHTML += `<div class="fixed inset-0 flex items-center justify-center bg-black/80 text-red-500">Error: data.js not loaded.</div>`;
+                return;
+            }
+
+            // Populate Players
+            const socPlayer = document.getElementById('social-player');
+            let players = [...TOURNAMENT_DATA.stats].sort((a, b) => b.PTS - a.PTS);
+            players.forEach(p => {
+                let o = document.createElement('option');
+                o.value = p.Player; o.innerText = p.Player; socPlayer.appendChild(o);
+            });
+
+            // Populate Matches
+            const socMatch = document.getElementById('social-match');
+            let matches = Object.values(TOURNAMENT_DATA.matches).sort((a, b) => new Date(b.Date) - new Date(a.Date));
+            matches.forEach(m => {
+                let o = document.createElement('option');
+                o.value = m['Match ID']; o.innerText = `${m.Team1} vs ${m.Team2} (${m.Score})`; socMatch.appendChild(o);
+            });
+
+
+
+            // URL Params
+            const urlParams = new URLSearchParams(window.location.search);
+            const preSelected = urlParams.get('player');
+            if (preSelected && players.find(p => p.Player === preSelected)) {
+                socPlayer.value = preSelected;
+            }
+
+            renderCard();
+        };
+
+        function toggleInputs() {
+            const type = document.getElementById('graphic-type').value;
+            document.getElementById('input-player').classList.toggle('hidden', type !== 'player');
+            document.getElementById('input-match').classList.toggle('hidden', type !== 'match');
+        }
+
+        function renderCard() {
+            const type = document.getElementById('graphic-type').value;
+            const card = document.getElementById('card');
+
+            // Themes
+            let bg = 'bg-zinc-900';
+            let txt = 'text-white';
+
+            if (cardTheme === 'light') { bg = 'bg-white'; txt = 'text-black'; }
+            if (cardTheme === 'brand') { bg = 'bg-brand'; txt = 'text-white'; }
+
+            card.className = `w-[600px] h-[750px] ${bg} relative shadow-2xl flex flex-col p-12 shrink-0 transition-colors duration-300 overflow-hidden`;
+
+            if (type === 'player') renderPlayerCard(card, txt);
+            else if (type === 'match') renderMatchCard(card, txt);
+        }
+
+        function renderPlayerCard(card, txt) {
+            const name = document.getElementById('social-player').value;
+            const p = TOURNAMENT_DATA.stats.find(x => x.Player === name);
+            if (!p) return;
+
+            card.innerHTML = `
+            <!-- Header -->
+            <div class="flex justify-between items-start z-10 mb-12">
+                <div class="flex items-center gap-3 opacity-80">
+                    <div class="h-px bg-current w-8"></div>
+                    <span class="text-xs font-bold tracking-[0.2em] uppercase ${txt} opacity-70">${p.Team}</span>
+                </div>
+                <img src="${TEAM_LOGOS[p.Team] || 'assets/tappa/logo.svg'}" alt="Tappa" class="h-12 w-auto object-contain">
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 flex flex-col justify-center z-10 -mt-10">
+                <h1 class="text-6xl font-black uppercase leading-[0.9] tracking-tight mb-2 ${txt}">${p.Player.split(' ')[0]}</h1>
+                <h1 class="text-6xl font-black uppercase leading-[0.9] tracking-tight ${txt} opacity-50">${p.Player.split(' ').slice(1).join(' ')}</h1>
+                <div class="h-2 w-20 bg-current mt-6 opacity-30"></div>
+            </div>
+            
+            <!-- Stats -->
+            <div class="grid grid-cols-2 gap-y-10 gap-x-8 border-t border-current/10 pt-10 z-10">
+                <div>
+                    <span class="block text-5xl font-mono font-bold ${txt}">${p.PTS}</span>
+                    <span class="text-xs font-bold uppercase tracking-wider opacity-60 ${txt}">PTS</span>
+                </div>
+                 <div>
+                    <span class="block text-5xl font-mono font-bold ${txt}">${p.TRB}</span>
+                    <span class="text-xs font-bold uppercase tracking-wider opacity-60 ${txt}">REB</span>
+                </div>
+                 <div>
+                    <span class="block text-5xl font-mono font-bold ${txt}">${p.AST}</span>
+                    <span class="text-xs font-bold uppercase tracking-wider opacity-60 ${txt}">AST</span>
+                </div>
+                 <div>
+                    <span class="block text-5xl font-mono font-bold ${txt}">${p.EFF}</span>
+                    <span class="text-xs font-bold uppercase tracking-wider opacity-60 ${txt}">EFF</span>
+                </div>
+            </div>
+
+            <!-- JERSEY # BG -->
+            <div class="absolute right-[-20px] bottom-[150px] text-[250px] font-black opacity-[0.03] leading-none select-none pointer-events-none rotate-90 origin-bottom-right ${txt}">${p.Jersey || ''}</div>
+            <div class="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay"></div>
+            `;
+        }
+
+        function renderMatchCard(card, txt) {
+            const mid = document.getElementById('social-match').value;
+            const m = TOURNAMENT_DATA.matches[mid];
+            if (!m) return;
+
+            const [s1, s2] = m.Score.split('-').map(Number);
+
+            card.innerHTML = `
+            <div class="flex justify-between items-center z-10 mb-8">
+                 <div class="text-xs font-bold tracking-[0.2em] uppercase ${txt} opacity-70">MATCH RESULT</div>
+                 <img src="assets/tappa/logo.svg" alt="Tappa" class="h-10 w-auto object-contain">
+            </div>
+
+            <div class="flex-1 flex flex-col justify-center items-center gap-12 z-10 relative">
+                <div class="w-full text-center">
+                    <h2 class="text-xl font-bold uppercase tracking-widest opacity-60 mb-2 ${txt}">${m.Team1}</h2>
+                    <img src="${TEAM_LOGOS[m.Team1] || ''}" class="h-16 w-auto h-16 mx-auto mb-2 opacity-80 object-contain">
+                    <div class="text-[100px] font-black leading-none ${txt}">${s1}</div>
+                </div>
+
+                <div class="h-px w-20 bg-current opacity-20"></div>
+
+                <div class="w-full text-center">
+                    <div class="text-[100px] font-black leading-none ${txt} opacity-50">${s2}</div>
+                    <img src="${TEAM_LOGOS[m.Team2] || ''}" class="h-16 w-auto mx-auto mt-2 opacity-80 object-contain">
+                    <h2 class="text-xl font-bold uppercase tracking-widest opacity-60 mt-2 ${txt}">${m.Team2}</h2>
+                </div>
+            </div>
+
+            <div class="mt-auto border-t border-current/10 pt-6 flex justify-between items-end z-10 w-full">
+                <div>
+                     <div class="text-xs font-bold uppercase opacity-40 ${txt}">Date</div>
+                     <div class="text-lg font-mono font-bold ${txt}">${m.Date || 'TBD'}</div>
+                </div>
+                 <div class="text-right">
+                     <div class="text-xs font-bold uppercase opacity-40 ${txt}">Pace</div>
+                     <div class="text-lg font-mono font-bold ${txt}">${m.PACE}</div>
+                </div>
+            </div>
+             <div class="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay"></div>
+            `;
+        }
+
+
+
+        function downloadCard() {
+            htmlToImage.toPng(document.getElementById('card')).then(url => {
+                const a = document.createElement('a'); a.download = 'card.png'; a.href = url; a.click();
+            });
+        }
+    </script>
+</body>
+
+</html>
