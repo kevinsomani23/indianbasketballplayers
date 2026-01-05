@@ -314,7 +314,7 @@ def render_match_row(row, m_found, idx, key_prefix="sch"):
                     st.session_state.jump_to_match = match_id
                     st.rerun()
 
-def render_schedule_table(filtered_sch, raw_data_all):
+def render_schedule_table(filtered_sch, raw_data_all, key_prefix="sch"):
     if filtered_sch.empty:
         st.info("No matches match the selected filters.")
         return
@@ -448,7 +448,7 @@ def render_schedule_table(filtered_sch, raw_data_all):
             with c6:
                 if m_found:
                     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True) # Spacer
-                    if st.button("📊 Stats", key=f"btn_stats_{row['Match ID']}_{idx}", use_container_width=True):
+                    if st.button("📊 Stats", key=f"{key_prefix}_btn_stats_{row['Match ID']}_{idx}", use_container_width=True):
                         st.session_state.active_tab = "MATCH DASHBOARD"
                         # Assuming m_found has 'MatchId' or similar from raw_data
                         # raw_data matches usually have 'MatchId' at root or similar? 
@@ -1195,7 +1195,7 @@ Tournament Overview
                             if subset.empty:
                                 st.info("No matches on this court.")
                             else:
-                                render_schedule_table(subset, raw_data_all)
+                                render_schedule_table(subset, raw_data_all, key_prefix=f"home_sch_t{idx}")
             
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
             if st.button("View Full Schedule", use_container_width=True, key="view_full_sch"):
