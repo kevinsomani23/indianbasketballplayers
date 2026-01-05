@@ -42,6 +42,8 @@ data/processed/73rd*
 data/processed/*_archived.json
 *.bak
 *.txt
+!requirements.txt
+!packages.txt
 *.md
 !README.md
 
