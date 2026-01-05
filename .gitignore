@@ -23,6 +23,9 @@ update_*.py
 check_*.py
 scrape_*.py
 src/scrape_*.py
+src/vibe_*.py
+src/tournament_engine.py
+src/utils/
 
 # Raw data and large binary files
 matches/
