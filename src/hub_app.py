@@ -6,28 +6,43 @@ import textwrap
 # Fix path for Streamlit Cloud deployment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# --- PAGE CONFIG ---
+# Define logo path relative to this file
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGO_PATH = os.path.join(BASE_DIR, "web", "assets", "tappa", "logo.svg")
+
+# Verify logo exists, otherwise use None to avoid crash
+if not os.path.exists(LOGO_PATH):
+    print(f"WARNING: Logo not found at {LOGO_PATH}")
+    LOGO_PATH = None
+
+try:
+    st.set_page_config(
+        page_title="SN25 Stats by tappa.bb",
+        page_icon=LOGO_PATH,
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+except Exception as e:
+    st.error(f"Critical Startup Error: {e}")
+
+# Imports AFTER page config to prevent "set_page_config not first" errors
 import pandas as pd
 import json
 import altair as alt
 import plotly.graph_objects as go
-import src.analytics as ant
 import numpy as np
-import src.ui.enhanced_components as ec
-import src.ui.social_generator as sg
-
-# --- PAGE CONFIG ---
-# Define logo path relative to this file
-LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "assets", "tappa", "logo.svg")
-
-st.set_page_config(
-    page_title="SN25 Stats by tappa.bb",
-    page_icon=LOGO_PATH,
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+try:
+    import src.analytics as ant
+    import src.ui.enhanced_components as ec
+    import src.ui.social_generator as sg
+except ImportError as e:
+    st.error(f"Failed to import modules: {e}")
+    st.stop()
 
 # --- INJECT ENHANCED CSS ---
-ec.inject_custom_css()
+if 'ec' in locals():
+    ec.inject_custom_css()
 
 @st.cache_data
 def load_data_v11():
