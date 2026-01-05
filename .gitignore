@@ -20,6 +20,9 @@ debug_*.py
 verify_*.py
 inspect_*.py
 update_*.py
+check_*.py
+scrape_*.py
+src/scrape_*.py
 
 # Raw data and large binary files
 matches/
@@ -29,6 +32,7 @@ data/raw/
 data/links/
 data/pbp_data.csv
 data/derived_team_stats.json
+data/competition_stats/
 
 # Exclude archived/transient data
 data/processed/73rd*
