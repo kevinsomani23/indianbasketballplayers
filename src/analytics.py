@@ -126,7 +126,7 @@ def calculate_derived_stats(df):
     # 4. Advanced Metrics
     # USG% = 100 * ((FGA + 0.44 * FTA + TOV) * (TmMin / 5)) / (Min * (TmFGA + 0.44 * TmFTA + TmTOV))
     gp = df["GP"] if "GP" in df.columns else 1.0
-    tm_min = gp * 40 # Typical full game
+    tm_min = gp * 200 # Typical full game team minutes (5 players * 40)
     p_poss = df["FGA"] + 0.44 * df["FTA"] + df["TOV"]
     
     # Safe denominators
