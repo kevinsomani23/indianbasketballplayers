@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from src.vibe_master_parser import VibeMasterParser
 
-def run_tournament(match_ids, subfolder=None, category_map=None):
+def run_tournament(match_ids, subfolder="75TH SN", category_map=None):
     data_path = "data/processed/data.json"
     if not os.path.exists("data/processed"):
         os.makedirs("data/processed")
