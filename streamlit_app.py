@@ -2345,7 +2345,100 @@ elif st.session_state.active_tab == "COMPARISON":
     # Filter out players with 0 games played
     df_p_all_comp = df_p_all_comp[df_p_all_comp['GP'] > 0].copy()
     
-    # Multi-Select
+    # --- STAT CATEGORY SELECTOR ---
+    st.markdown("### Select Stats to Compare")
+    
+    # Define categorized stat groups
+    stat_categories = {
+        "Scoring": ["PTS", "FGM", "FGA", "FG%", "2PM", "2PA", "2P%", "3PM", "3PA", "3P%", "FTM", "FTA", "FT%", "eFG%", "TS%"],
+        "Rebounding": ["REB", "OREB", "DREB"],
+        "Playmaking": ["AST", "AST%", "AST/TO", "TOV"],
+        "Defense": ["STL", "BLK", "PF", "DEFRTG"],
+        "Advanced": ["FIC", "GmScr", "PIE", "USG%", "Eff", "OFFRTG", "NETRTG", "+/-"]
+    }
+    
+    # Flatten all available stats
+    all_available_stats = []
+    for category_stats in stat_categories.values():
+        all_available_stats.extend(category_stats)
+    
+    # Filter to only stats that exist in the dataframe
+    available_stats = [stat for stat in all_available_stats if stat in df_p_all_comp.columns]
+    
+    # --- PRESET DEFINITIONS ---
+    presets = {
+        "Balanced (Default)": ["GmScr", "FIC", "PIE", "eFG%", "TS%", "USG%"],
+        "Scoring": ["PTS", "FG%", "3P%", "eFG%", "TS%", "USG%"],
+        "Playmaking": ["AST", "AST%", "AST/TO", "TOV", "USG%"],
+        "Defense": ["STL", "BLK", "DREB", "DEFRTG", "PF"],
+        "Shooting": ["FG%", "3P%", "FT%", "eFG%", "TS%", "2P%"],
+        "Advanced": ["FIC", "GmScr", "PIE", "USG%", "Eff", "NETRTG", "+/-"]
+    }
+    
+    # helper to filter presets to available stats
+    for k in presets:
+        presets[k] = [s for s in presets[k] if s in available_stats]
+        
+    # --- SESSION STATE MANAGEMENT ---
+    # Initialize keys if not present
+    if "comp_stat_preset" not in st.session_state:
+        st.session_state.comp_stat_preset = "Balanced (Default)"
+    if "comp_selected_stats" not in st.session_state:
+        st.session_state.comp_selected_stats = presets["Balanced (Default)"]
+        
+    # Callback for Preset Change
+    def on_preset_change():
+        sel = st.session_state.comp_stat_preset
+        if sel != "Custom":
+            st.session_state.comp_selected_stats = presets[sel]
+            
+    # Callback for Multiselect Change
+    def on_stats_change():
+        # Check if current selection matches any preset
+        current = set(st.session_state.comp_selected_stats)
+        found = False
+        for name, stats in presets.items():
+            if set(stats) == current:
+                st.session_state.comp_stat_preset = name
+                found = True
+                break
+        if not found:
+            st.session_state.comp_stat_preset = "Custom"
+
+    # Layout: 2 Columns (Preset | Stats)
+    c_preset, c_stats = st.columns([1, 2])
+    
+    with c_preset:
+        st.selectbox(
+            "Stat Preset",
+            ["Custom"] + list(presets.keys()),
+            key="comp_stat_preset",
+            on_change=on_preset_change
+        )
+        
+    with c_stats:
+        selected_stats = st.multiselect(
+            "Customize Stats",
+            available_stats,
+            key="comp_selected_stats",
+            on_change=on_stats_change,
+            help="Select specific metrics to compare"
+        )
+    
+    # Validation (Fallbacks)
+    if not selected_stats:
+        selected_stats = presets["Balanced (Default)"]
+        st.session_state.comp_selected_stats = selected_stats
+    
+    if len(selected_stats) < 3:
+        st.warning("⚠️ Please select at least 3 stats for meaningful comparison.")
+    elif len(selected_stats) > 8:
+        st.warning("⚠️ Maximum 8 stats allowed for optimal visualization.")
+        selected_stats = selected_stats[:8]
+    
+    st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+    
+    # Multi-Select Players
     all_p_names = sorted(df_p_all_comp['Player'].unique())
     comp_players = st.multiselect("Select Players to Compare (Max 4)", all_p_names, max_selections=4)
     
@@ -2355,15 +2448,44 @@ elif st.session_state.active_tab == "COMPARISON":
         # Radar Chart
         import plotly.graph_objects as go
         
-        # Define metrics and their maximum expected values for normalization
-        metric_configs = {
-            "GmScr": {"max": 25, "label": "Game Score"},
-            "FIC": {"max": 25, "label": "FIC"},
-            "PIE": {"max": 30, "label": "PIE"},
-            "eFG%": {"max": 100, "label": "eFG%"},
-            "TS%": {"max": 100, "label": "TS%"},
-            "USG%": {"max": 40, "label": "Usage%"}
-        }
+        # --- DYNAMIC METRIC CONFIGURATION ---
+        # Determine appropriate max values for selected stats
+        metric_configs = {}
+        
+        # Stats that are percentages (max = 100)
+        percentage_stats = ["FG%", "2P%", "3P%", "FT%", "eFG%", "TS%", "AST%", "USG%"]
+        
+        # Stats that should use per-game values
+        per_game_stats = ["PTS", "REB", "OREB", "DREB", "AST", "STL", "BLK", "TOV", "PF", 
+                         "FGM", "FGA", "2PM", "2PA", "3PM", "3PA", "FTM", "FTA",
+                         "FIC", "GmScr", "+/-"]
+        
+        for stat in selected_stats:
+            if stat in percentage_stats:
+                # Percentages: max = 100
+                metric_configs[stat] = {"max": 100, "label": stat}
+            elif stat in ["OFFRTG", "DEFRTG", "NETRTG"]:
+                # Ratings: use dynamic max (1.5x highest value)
+                max_val = 0
+                for _, row in comp_df.iterrows():
+                    val = row.get(stat, 0)
+                    max_val = max(max_val, abs(val))
+                metric_configs[stat] = {"max": max(max_val * 1.5, 10), "label": stat}
+            elif stat in per_game_stats:
+                # Per-game stats: calculate from totals, use dynamic max
+                max_val = 0
+                for _, row in comp_df.iterrows():
+                    gp = row.get('GP', 1)
+                    val = row.get(stat, 0) / gp if gp > 0 else 0
+                    max_val = max(max_val, val)
+                metric_configs[stat] = {"max": max(max_val * 1.5, 1), "label": stat}
+            else:
+                # Other advanced stats: use dynamic max
+                max_val = 0
+                for _, row in comp_df.iterrows():
+                    val = row.get(stat, 0)
+                    max_val = max(max_val, abs(val))
+                metric_configs[stat] = {"max": max(max_val * 1.5, 10), "label": stat}
         
         fig = go.Figure()
         
@@ -2383,15 +2505,15 @@ elif st.session_state.active_tab == "COMPARISON":
             if gp == 0:
                 continue
             
-            # Calculate raw values
-            raw_values = {
-                "GmScr": row.get('GmScr', 0) / gp,
-                "FIC": row.get('FIC', 0) / gp,
-                "PIE": row.get('PIE', 0),
-                "eFG%": row.get('eFG%', 0),
-                "TS%": row.get('TS%', 0),
-                "USG%": row.get('USG%', 0)
-            }
+            # Calculate raw values dynamically based on selected stats
+            raw_values = {}
+            for stat in selected_stats:
+                if stat in per_game_stats:
+                    # Convert totals to per-game
+                    raw_values[stat] = row.get(stat, 0) / gp if gp > 0 else 0
+                else:
+                    # Use raw value (percentages, ratings, etc.)
+                    raw_values[stat] = row.get(stat, 0)
             
             # Normalize to 0-100 scale based on expected max
             normalized_vals = []
@@ -2466,20 +2588,26 @@ elif st.session_state.active_tab == "COMPARISON":
         # Comparison Table - Custom Format
         st.markdown("### Head-to-Head Stats")
         
-        # Stats to display with their labels
-        stat_definitions = [
-            ("GP", "GP"),
-            ("PTS", "PPG"),
-            ("REB", "RPG"),
-            ("AST", "APG"),
-            ("FIC", "FIC/G"),
-            ("GmScr", "GmScr/G"),
-            ("eFG%", "eFG%"),
-            ("TS%", "TS%"),
-            ("USG%", "USG%"),
-            ("PIE", "PIE"),
-            ("+/-", "+/-")
-        ]
+        # Build stat definitions dynamically from selected stats
+        # Always include GP as first column
+        stat_definitions = [("GP", "GP")]
+        
+        # Add selected stats with appropriate labels
+        for stat in selected_stats:
+            if stat in per_game_stats and stat not in ["FIC", "GmScr", "+/-"]:
+                # Counting stats shown as per-game (except FIC, GmScr which are already labeled)
+                if stat in ["PTS", "REB", "AST", "STL", "BLK", "TOV", "PF"]:
+                    label = f"{stat[0]}PG" if len(stat) == 3 else f"{stat}/G"
+                else:
+                    label = f"{stat}/G"
+            elif stat in ["FIC", "GmScr"]:
+                # These are shown as per-game with /G suffix
+                label = f"{stat}/G"
+            else:
+                # Percentages, ratings, and other advanced stats use their name as-is
+                label = stat
+            
+            stat_definitions.append((stat, label))
         
         # Custom CSS for the Head-to-Head Table (Localized but using globals)
         st.markdown(f"""
@@ -2559,18 +2687,15 @@ elif st.session_state.active_tab == "COMPARISON":
             # Get values for all players
             values = []
             for idx, (i, row) in enumerate(comp_df.iterrows()):
-                if stat_key == "Team":
-                    val = row.get(stat_key, "-")
-                    values.append((val, False))
-                elif stat_key == "GP":
+                if stat_key == "GP":
                     val = int(row.get(stat_key, 0))
                     values.append((val, False))
-                elif stat_key in ["PTS", "REB", "AST", "FIC", "GmScr", "+/-"]:
-                    # Per-game stats
+                elif stat_key in per_game_stats:
+                    # Per-game stats (convert totals)
                     val = row.get(stat_key, 0) / row.get('GP', 1)
                     values.append((val, True))
                 else:
-                    # Percentage stats
+                    # Percentage stats and other advanced metrics
                     val = row.get(stat_key, 0)
                     values.append((val, True))
             
