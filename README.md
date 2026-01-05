@@ -1,6 +1,6 @@
 # 75th Senior National Basketball Championship - Analytics Platform
 
-**Tappa Pro** is the official analytics partner for the 75th Senior National Basketball Championship. This platform provides real-time insights, advanced statistics, and comprehensive coverage of the tournament.
+**Tappa Pro** is a **fan-made community project** dedicated to the 75th Senior National Basketball Championship. This platform provides real-time insights, advanced statistics, and comprehensive coverage of the tournament for the Indian Basketball community.
 
 ## 🏀 About the Platform
 
