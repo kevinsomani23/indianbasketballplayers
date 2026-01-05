@@ -37,6 +37,13 @@ data/pbp_data.csv
 data/derived_team_stats.json
 data/competition_stats/
 
+# Scripts
+src/scrape_*.py
+src/vibe_*.py
+!src/vibe_master_parser.py
+recover_data.py
+scrape_*.py
+
 # Exclude archived/transient data
 data/processed/73rd*
 data/processed/*_archived.json
