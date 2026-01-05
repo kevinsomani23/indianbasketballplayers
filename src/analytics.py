@@ -93,11 +93,14 @@ def calculate_derived_stats(df):
     # Ensure all columns exist (defensive)
     df = normalize_stats(df)
     
+    
     # --- DATA INTEGRITY & INFERENCE ---
-    # Enforce 2PT consistency: FGM = 2PM + 3PM. 
-    # We trust FGM and 3PM as primary sources.
-    df["2PM"] = df["FGM"] - df["3PM"]
-    df["2PA"] = df["FGA"] - df["3PA"]
+    # Only calculate 2PM/2PA if they are missing or zero
+    # The parser provides accurate 2PM/2PA from actual game data, don't overwrite it
+    mask_2p_missing = (df["2PM"].fillna(0) == 0) & (df["2PA"].fillna(0) == 0)
+    df.loc[mask_2p_missing, "2PM"] = df.loc[mask_2p_missing, "FGM"] - df.loc[mask_2p_missing, "3PM"]
+    df.loc[mask_2p_missing, "2PA"] = df.loc[mask_2p_missing, "FGA"] - df.loc[mask_2p_missing, "3PA"]
+    
     
     # 1. Percentages
     df["FG%"] = (df["FGM"] / df["FGA"] * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0)

@@ -499,31 +499,22 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
             # We will sum all available periods to ensure clean separation
             # EXCEPT: Some old games might not have PeriodStats?
             # Safe Fallback: Check if PeriodStats exists
+            # Match-specific accumulation
             p_stats_merged = {}
             if m.get('PeriodStats'):
                 for q in m['PeriodStats']:
                     for p_name, s in m['PeriodStats'][q].items():
                         if p_name not in p_stats_merged:
-                            p_stats_merged[p_name] = s.copy()
-                            p_stats_merged[p_name]['PTS'] = 0
-                            p_stats_merged[p_name]['REB'] = 0
-                            p_stats_merged[p_name]['AST'] = 0
-                            # Initialize other count stats to 0 if needed or rely on += logic
-                            # Actually, simpler: just start with empty and sum up
-                            
-                # Re-loop to sum correctly
-                p_stats_merged = {}
-                for q in m['PeriodStats']:
-                     for p_name, s in m['PeriodStats'][q].items():
-                        if p_name not in p_stats_merged:
-                            p_stats_merged[p_name] = s.copy() # Base metadata from first occurrence
+                            # Use copy here, we'll deepcopy later or just ensure we don't mutate original
+                            p_stats_merged[p_name] = s.copy() 
                         else:
-                            # Sum Counts
+                            # Sum Counts for duplicates (e.g. same player in multiple quarters)
                             for k in ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "MIN_DEC"]:
-                                p_stats_merged[p_name][k] = p_stats_merged[p_name].get(k, 0) + s.get(k, 0)
-                                
+                                if k in s:
+                                    p_stats_merged[p_name][k] = p_stats_merged[p_name].get(k, 0) + s[k]
+                                    
             source_stats = p_stats_merged if p_stats_merged else m.get('PlayerStats', {})
-            use_precalc_team = False # Force team recalc from this clean player data
+            use_precalc_team = False 
         else:
             source_stats = m.get('PeriodStats', {}).get(period, {})
             use_precalc_team = False
@@ -534,10 +525,12 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
         # --- PROCESS PLAYERS ---
         ts_match = m.get('TeamStats', {})
         for p_name, s in source_stats.items():
-            r = s.copy()
+            # Deepish copy to prevent mutation of source raw data (Audit 1.1)
+            r = s.copy() 
+            
             # Ensure Team is present
             if 'Team' not in r:
-                r['Team'] = t1 # Dangerous fallback, but players usually have Team
+                r['Team'] = t1 if t1 else 'Unknown' # Safer fallback
             
             team_val = r.get('Team', 'Unknown')
             tk = "t1" if team_val == t1 else "t2"
