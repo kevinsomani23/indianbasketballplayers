@@ -41,8 +41,12 @@ except ImportError as e:
     st.stop()
 
 # --- INJECT ENHANCED CSS ---
-if 'ec' in locals():
-    ec.inject_custom_css()
+# --- INJECT ENHANCED CSS ---
+# if 'ec' in locals():
+#     ec.inject_custom_css()
+
+st.title("🚧 DEBUG MODE: App Initialized 🚧")
+st.write("If you see this, the script is running.")
 
 @st.cache_data
 def load_data_v11():
