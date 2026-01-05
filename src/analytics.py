@@ -94,11 +94,11 @@ def calculate_derived_stats(df):
     df = normalize_stats(df)
     
     # --- DATA INTEGRITY & INFERENCE ---
-    # Infer 2pt stats from FG totals if missing
-    mask_2p = (df["2PM"] == 0) & (df["2PA"] == 0)
-    df.loc[mask_2p, "2PM"] = df.loc[mask_2p, "FGM"] - df.loc[mask_2p, "3PM"]
-    df.loc[mask_2p, "2PA"] = df.loc[mask_2p, "FGA"] - df.loc[mask_2p, "3PA"]
-
+    # Enforce 2PT consistency: FGM = 2PM + 3PM. 
+    # We trust FGM and 3PM as primary sources.
+    df["2PM"] = df["FGM"] - df["3PM"]
+    df["2PA"] = df["FGA"] - df["3PA"]
+    
     # 1. Percentages
     df["FG%"] = (df["FGM"] / df["FGA"] * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0)
     df["2P%"] = (df["2PM"] / df["2PA"] * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0)
@@ -121,30 +121,42 @@ def calculate_derived_stats(df):
     df["TSA"] = df["FGA"] + 0.44 * df["FTA"]
     
     # 4. Advanced Metrics
-    df["OFFRTG"] = (df["OffPTS"] / df["TmPoss"] * 100).fillna(0.0)
-    df["DEFRTG"] = (df["DefPTS"] / df["OppPoss"] * 100).fillna(0.0)
-    df["NETRTG"] = df["OFFRTG"] - df["DEFRTG"]
-    df["USG%"] = (df["PPoss"] / df["TmPoss"] * 100).fillna(0.0)
+    # USG% = 100 * ((FGA + 0.44 * FTA + TOV) * (TmMin / 5)) / (Min * (TmFGA + 0.44 * TmFTA + TmTOV))
+    gp = df["GP"] if "GP" in df.columns else 1.0
+    tm_min = gp * 40 # Typical full game
+    p_poss = df["FGA"] + 0.44 * df["FTA"] + df["TOV"]
     
-    teammate_fgm = df["TmFGM"] - df["FGM"]
-    df["AST%"] = (df["AST"] / teammate_fgm * 100).fillna(0.0)
+    # Safe denominators
+    safe_min = df["MIN_CALC"].clip(lower=0.1)
+    safe_tm_poss = df["TmPoss"].clip(lower=1.0)
+    safe_opp_poss = df["OppPoss"].clip(lower=1.0)
+    
+    # USG% protection
+    usg_num = p_poss * (tm_min / 5)
+    usg_den = safe_min * safe_tm_poss
+    df["USG%"] = (100 * usg_num / usg_den).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    df["USG%"] = df["USG%"].clip(0, 100.0)
+    
+    # AST% = 100 * AST / (((Min / (TmMin / 5)) * TmFGM) - FGM)
+    # Standard AST% can be noisy. We'll floor the denominator at 1.0.
+    ast_den = ((safe_min / (tm_min / 5)) * df["TmFGM"]) - df["FGM"]
+    df["AST%"] = (100 * df["AST"] / ast_den.clip(lower=1.0)).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    df["AST%"] = df["AST%"].clip(0, 100.0)
+    
+    df["OFFRTG"] = (df["OffPTS"] / safe_tm_poss * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0).clip(upper=300.0)
+    df["DEFRTG"] = (df["DefPTS"] / safe_opp_poss * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0).clip(upper=300.0)
+    df["NETRTG"] = df["OFFRTG"] - df["DEFRTG"]
     df["+/-"] = df["OffPTS"] - df["DefPTS"]
     
     # 6. Ratios
-    df["AST/TO"] = (df["AST"] / df["TOV"] * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    # Use floor of 1.0 for TOV to avoid '30.0' ratio for 3 assists (3/0.1). 
+    # This treats 0 TOV as 1 TOV for ratio purposes, which is a standard safeguard.
+    df["AST/TO"] = (df["AST"] / df["TOV"].clip(lower=1.0)).replace([np.inf, -np.inf], 0.0).fillna(0.0)
     
     # --- COMPLEX METRICS ---
     # FIC (Floor Impact Counter)
-    # Formula: PTS + ORB + 0.75 DRB + AST + STL + BLK – 0.75 FGA – 0.375 FTA – TO – 0.5 PF
-    # Note: Using .get() or checking columns would be safer, but normalize_stats ensures they exist.
     df["FIC"] = (df["PTS"] + df["OREB"] + 0.75 * df["DREB"] + df["AST"] + df["STL"] + df["BLK"] - 
                  0.75 * df["FGA"] - 0.375 * df["FTA"] - df["TOV"] - 0.5 * df["PF"])
-
-    # Game Score (GmScr)
-    # Formula: PTS + 0.4 * FGM - 0.7 * FGA - 0.4 * (FTA - FTM) + 0.7 * OREB + 0.3 * DREB + STL + 0.7 * AST + 0.7 * BLK - 0.4 * PF - TOV
-    df["GmScr"] = (df["PTS"] + 0.4 * df["FGM"] - 0.7 * df["FGA"] - 0.4 * (df["FTA"] - df["FTM"]) + 
-                   0.7 * df["OREB"] + 0.3 * df["DREB"] + df["STL"] + 0.7 * df["AST"] + 0.7 * df["BLK"] - 
-                   0.4 * df["PF"] - df["TOV"])
 
     # PIE (Player Impact Estimate)
     pie_num = df["PTS"] + df["FGM"] + df["FTM"] - df["FGA"] - df["FTA"] + df["DREB"] + (0.5 * df["OREB"]) + \
@@ -160,13 +172,15 @@ def calculate_derived_stats(df):
     gm_ast = df["TmAST"] + df["OppAST"]
     gm_stl = df["TmSTL"] + df["OppSTL"]
     gm_blk = df["TmBLK"] + df["OppBLK"]
-    gm_pf = df["PF"] + df["OppPF"] 
+    gm_pf = df["TmPF"] + df["OppPF"] 
     gm_tov = df["TmTOV"] + df["OppTOV"]
     
     pie_den = gm_pts + gm_fgm + gm_ftm - gm_fga - gm_fta + gm_dreb + (0.5 * gm_oreb) + \
               gm_ast + gm_stl + (0.5 * gm_blk) - gm_pf - gm_tov
               
-    df["PIE"] = (pie_num / pie_den * 100).fillna(0.0)
+    # PIE Denominator protection: Floor at 20.0 to prevent division by near-zero in bad aggregates
+    df["PIE"] = (pie_num / pie_den.clip(lower=20.0) * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    df["PIE"] = df["PIE"].clip(-100, 100.0)
     
     # Game Score (GmScr)
     df["GmScr"] = df["PTS"] + 0.4 * df["FGM"] - 0.7 * df["FGA"] - 0.4 * (df["FTA"] - df["FTM"]) + \

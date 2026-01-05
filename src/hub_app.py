@@ -532,15 +532,30 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
         match_p_rows = []
         
         # --- PROCESS PLAYERS ---
+        ts_match = m.get('TeamStats', {})
         for p_name, s in source_stats.items():
             r = s.copy()
             # Ensure Team is present
             if 'Team' not in r:
-                # Fallback logic if Team missing in source
-                # (PeriodStats verified to have Team, but strictly safely)
-                r['Team'] = t1 # Dangerous assumption, but usually present
+                r['Team'] = t1 # Dangerous fallback, but players usually have Team
             
             team_val = r.get('Team', 'Unknown')
+            tk = "t1" if team_val == t1 else "t2"
+            opp_tk = "t2" if tk == "t1" else "t1"
+            
+            # INJECT MATCH CONTEXT: Ensure every player row has the full team context for this match
+            if tk in ts_match and opp_tk in ts_match:
+                # Own Team Stats
+                for k, v in ts_match[tk].items():
+                    if isinstance(v, (int, float)):
+                        r[f"Tm{k}"] = v
+                        if k == "PTS": r["OffPTS"] = v
+                # Opponent Team Stats
+                for k, v in ts_match[opp_tk].items():
+                    if isinstance(v, (int, float)):
+                        r[f"Opp{k}"] = v
+                        if k == "PTS": r["DefPTS"] = v
+            
             jersey_val = str(r.get('No', '??'))
             
             # Unique Key includes Category to prevent Men/Women merging
@@ -556,11 +571,10 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
         # --- PROCESS TEAMS ---
         if use_precalc_team:
             # Existing Logic for Full Game
-            ts = m.get('TeamStats', {})
-            if 't1' in ts and 't2' in ts:
+            if 't1' in ts_match and 't2' in ts_match:
                 for tk in ['t1', 't2']:
                     opp_tk = 't2' if tk == 't1' else 't1'
-                    s = ts[tk].copy()
+                    s = ts_match[tk].copy()
                     
                     row = {}
                     row['Team'] = tn.get(tk, 'Unknown')
@@ -573,11 +587,13 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
                         if isinstance(v, (int, float)):
                             row[k] = v
                             row[f"Tm{k}"] = v
+                            if k == "PTS": row["OffPTS"] = v
                     
                     # Map Opponent Stats
-                    for k, v in ts[opp_tk].items():
+                    for k, v in ts_match[opp_tk].items():
                         if isinstance(v, (int, float)):
                             row[f"Opp{k}"] = v
+                            if k == "PTS": row["OppPTS"] = v
                             
                     t_recs.append(row)
         else:
@@ -689,6 +705,13 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
     else:
         df_final_t = pd.DataFrame()
         
+    # --- RECALCULATE ADVANCED STATS ON AGGREGATES ---
+    # This ensures that percentages (FG%, USG%, PIE) are calculated from the TOTALS,
+    # not just summing up the per-game percentages (which is wrong).
+    # It also enforces consistency (e.g. 2PM = FGM - 3PM).
+    df_final_p = ant.calculate_derived_stats(df_final_p)
+    df_final_t = ant.calculate_derived_team_stats(df_final_t)
+
     return df_final_p, df_final_t
 
 def calculate_power_rankings(raw_data_list):
