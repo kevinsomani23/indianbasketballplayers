@@ -44,6 +44,8 @@ except ImportError as e:
 # --- INJECT ENHANCED CSS ---
 if 'ec' in locals():
     ec.inject_custom_css()
+    
+
 
 # st.title("🚧 DEBUG MODE: App Initialized 🚧")
 # st.write("If you see this, the script is running.")
@@ -982,6 +984,19 @@ Made by
 <img src="data:image/png;base64,{kev_b64}" style="height: 16px; vertical-align: middle; border-radius: 50%;" />
 <a href="https://www.instagram.com/thekevmedia/" target="_blank" style='color: #ff3333; font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
 Kev Media
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+<line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+</svg>
+</a>
+</span>
+<span style='color: rgba(255, 255, 255, 0.3);'>|</span>
+<span style='display: flex; align-items: center; gap: 4px;'>
+Supported by 
+<a href="https://www.instagram.com/nolooknationind/" target="_blank" style='color: #87CEEB; font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
+<img src="data:image/svg+xml;base64,{ec.NNI_LOGO_B64}" style="height: 16px; vertical-align: middle;" />
+NoLookNation
 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
 <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
 <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
