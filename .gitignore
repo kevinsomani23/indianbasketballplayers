@@ -8,24 +8,38 @@ ENV/
 
 # Local Streamlit config
 .streamlit/
-!.streamlit/config.toml
+! .streamlit/config.toml
 
-# Internal Development tools (unnecessary for the app)
+# Project Scripts & Development Tools
+# (Excluded from app runtime)
 scripts/
 docs/
-run_75th.py
+patch_*.py
+fix_*.py
+debug_*.py
+verify_*.py
+inspect_*.py
+update_*.py
 
 # Raw data and large binary files
 matches/
 reports/
+web/
 data/raw/
-data/derived_team_stats.json
-data/pbp_data.csv
 data/links/
+data/pbp_data.csv
+data/derived_team_stats.json
 
-# Keep only essential processed data
-# !data/processed/data.json  <- Git will keep it because of include rule
+# Exclude archived/transient data
+data/processed/73rd*
+data/processed/*_archived.json
+*.bak
+*.txt
+*.md
+!README.md
 
-# OS-specific
-.DS_Store
-Thumbs.db
+# Application Data (tracked)
+!compiled_schedule.csv
+!data/processed/data.json
+!data/processed/manual_scores.json
+!data/logos.json

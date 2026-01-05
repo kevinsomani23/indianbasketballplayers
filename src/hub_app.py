@@ -1,6 +1,7 @@
 import streamlit as st
 import sys
 import os
+import textwrap
 
 # Fix path for Streamlit Cloud deployment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,28 +29,13 @@ st.set_page_config(
 # --- INJECT ENHANCED CSS ---
 ec.inject_custom_css()
 
-# --- DATA LOADER    # v7
 @st.cache_data
 def load_data_v11():
-    """Load the main JSON data and merge categories"""
+    """Load the main JSON data. Trust data.json as source of truth."""
     try:
         # data/processed/data.json
         with open("data/processed/data.json", "r", encoding='utf-8-sig') as f:
             data = json.load(f)
-            
-        # Merge Categories immediately
-        try:
-            with open("data/raw/match_category_map.json", "r", encoding='utf-8-sig') as f:
-                cmap = json.load(f)
-            
-            for m in data:
-                mid = str(m.get("MatchID")).strip()
-                if mid in cmap:
-                    m['Category'] = cmap[mid]
-        except Exception as e:
-            # print(f"Error merging categories: {e}") # Silent error preferred on cloud
-            pass
-            
         return data
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -59,11 +45,431 @@ def load_data_v11():
 def load_category_map():
     """Load category map"""
     try:
-        # data/raw/match_category_map.json
         with open("data/raw/match_category_map.json", "r", encoding='utf-8-sig') as f:
             return json.load(f)
     except:
         return {}
+
+@st.cache_data
+def load_logos():
+    try:
+        with open("data/logos.json", "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def load_manual_scores():
+    try:
+        with open("data/processed/manual_scores.json", "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def load_schedule():
+    """Load the compiled schedule CSV"""
+    try:
+        df = pd.read_csv("compiled_schedule.csv")
+        return df
+    except:
+        return pd.DataFrame()
+
+def get_match_obj(row, raw_data_list):
+    t1_s = str(row['Team A']).strip().upper()
+    t2_s = str(row['Team B']).strip().upper()
+    cat_s = row['Gender']
+    
+    for m_data in raw_data_list:
+        t1_d = str(m_data['Teams']['t1']).strip().upper()
+        t2_d = str(m_data['Teams']['t2']).strip().upper()
+        cat_d = m_data.get('Category', '')
+        
+        if cat_d == cat_s:
+            if (t1_s == t1_d and t2_s == t2_d) or (t1_s == t2_d and t2_s == t1_d):
+                return m_data
+    return None
+
+def calculate_unified_standings(schedule_df, manual_scores, raw_data_list):
+    # Initialize Teams
+    teams = {} # Key: "TeamName_Gender", Value: {GP, W, L, PF, PA, Gender, Group}
+    
+    # 1. Initialize from Schedule (to ensure all teams exist)
+    for _, row in schedule_df.iterrows():
+        if pd.isna(row['Team A']): continue
+        t1 = str(row['Team A']).strip().upper()
+        t2 = str(row['Team B']).strip().upper()
+        gender = str(row['Gender']).strip().title() # Normalize to Title Case (Men/Women)
+        grp = row['Group']
+        
+        for t in [t1, t2]:
+            key = f"{t}_{gender}"
+            if key not in teams:
+                teams[key] = {
+                    "Team": t,
+                    "Gender": gender,
+                    "Group": grp,
+                    "GP": 0, "W": 0, "L": 0, 
+                    "PF": 0, "PA": 0, "PD": 0, "PTS": 0
+                }
+    
+    # 2. Process Matches
+    processed_matches = set()
+    
+    for idx, row in schedule_df.iterrows():
+        if pd.isna(row['Team A']): continue
+        
+        mid = row['Match ID']
+        if mid in processed_matches: continue
+        
+        t1 = str(row['Team A']).strip().upper()
+        t2 = str(row['Team B']).strip().upper()
+        gender = str(row['Gender']).strip().title()
+        
+        # Keys for Stats
+        k_t1 = f"{t1}_{gender}"
+        k_t2 = f"{t2}_{gender}"
+
+        # Check for Score
+        s1, s2 = None, None
+        
+        # A. Check Detailed Stats
+        m_found = get_match_obj(row, raw_data_list)
+        if m_found:
+            s1 = m_found['TeamStats']['t1']['PTS']
+            s2 = m_found['TeamStats']['t2']['PTS']
+        else:
+            # B. Check Manual Scores
+            # Manual Scores keys use UPPER gender
+            g_upper = gender.upper()
+            
+            # Try Forward Key
+            k1 = f"{t1}_VS_{t2}_{g_upper}"
+            if manual_scores.get(k1):
+                s1 = manual_scores[k1]['s1']
+                s2 = manual_scores[k1]['s2']
+            else:
+                # Try Reverse Key
+                k2 = f"{t2}_VS_{t1}_{g_upper}"
+                if manual_scores.get(k2):
+                    s1 = manual_scores[k2]['s2']
+                    s2 = manual_scores[k2]['s1']
+        
+        if s1 is not None and s2 is not None:
+            # Update Stats
+            processed_matches.add(mid)
+            
+            # Team 1
+            if k_t1 in teams:
+                teams[k_t1]['GP'] += 1
+                teams[k_t1]['PF'] += s1
+                teams[k_t1]['PA'] += s2
+                if s1 > s2: 
+                    teams[k_t1]['W'] += 1
+                    teams[k_t1]['PTS'] += 2
+                else: 
+                    teams[k_t1]['L'] += 1
+                    teams[k_t1]['PTS'] += 1
+            
+            # Team 2
+            if k_t2 in teams:
+                teams[k_t2]['GP'] += 1
+                teams[k_t2]['PF'] += s2
+                teams[k_t2]['PA'] += s1
+                if s2 > s1: 
+                    teams[k_t2]['W'] += 1
+                    teams[k_t2]['PTS'] += 2
+                else: 
+                    teams[k_t2]['L'] += 1
+                    teams[k_t2]['PTS'] += 1
+                    
+        # Update PD
+        for t_key in [k_t1, k_t2]:
+             if t_key in teams:
+                 teams[t_key]['PD'] = teams[t_key]['PF'] - teams[t_key]['PA']
+
+    return list(teams.values())
+
+def get_mvp_simple(m):
+    # Find player with max GmScr
+    best_p, max_v = None, -999
+    for p, s in m.get('PlayerStats', {}).items():
+        v = s.get("GmScr", 0)
+        if v > max_v:
+            max_v = v
+            best_p = p
+    return best_p, max_v
+
+def render_match_row(row, m_found, idx, key_prefix="sch"):
+    if pd.isna(row['Team A']):
+        st.markdown(f"<div style='background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 20px; font-weight: bold; color: var(--tappa-orange); text-transform: uppercase; letter-spacing: 0.2rem; filter: drop-shadow(0 0 5px var(--tappa-orange-glow));'>{row['Court']} - {row['Match ID']}</div>", unsafe_allow_html=True)
+        return
+
+    logos = load_logos()
+    manual_scores = load_manual_scores()
+    match_id = str(m_found['MatchID']) if m_found else None
+    
+    # Extract Team Details
+    t1_name, t2_name = str(row['Team A']).strip(), str(row['Team B']).strip()
+    t1_logo = logos.get(t1_name, "")
+    t2_logo = logos.get(t2_name, "")
+    
+    # Check manual scores if not found in scraped data
+    m_score = None
+    if not m_found:
+        m_key = f"{t1_name.upper()}_VS_{t2_name.upper()}_{row['Gender'].upper()}"
+        m_score = manual_scores.get(m_key)
+        # Try reverse key too
+        if not m_score:
+            m_key_rev = f"{t2_name.upper()}_VS_{t1_name.upper()}_{row['Gender'].upper()}"
+            m_score = manual_scores.get(m_key_rev)
+            if m_score:
+                # Swap scores if reversed
+                m_score = {'s1': m_score['s2'], 's2': m_score['s1'], 'id': m_score['id']}
+
+    # TV Scoreboard Style
+    with st.container():
+        # Outer Card
+        is_indoor = "INDOOR" in str(row['Court']).upper()
+        has_score = (m_found is not None) or (m_score is not None)
+        
+        card_bg = "rgba(255, 255, 255, 0.03)" if not has_score else ("linear-gradient(135deg, rgba(255, 133, 51, 0.1) 0%, rgba(0,0,0,0.4) 100%)" if is_indoor else "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.4) 100%)")
+        border_color = "rgba(255, 255, 255, 0.1)" if not has_score else ("#ffc107" if is_indoor else "var(--tappa-orange)")
+        border_width = "1px" if not has_score else "2px"
+        glow = "box-shadow: 0 0 15px rgba(255, 193, 7, 0.2);" if is_indoor and has_score else ("box-shadow: 0 0 15px rgba(255, 133, 51, 0.2);" if has_score else "")
+        
+        mvp_section = ""
+        if m_found:
+            mvp_name, mvp_val = get_mvp_simple(m_found)
+            if mvp_name:
+                import textwrap
+                mvp_section = f"""<div style='margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;'>
+<span style='font-size: 0.65rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em;'>Player of the Match</span>
+<span style='font-size: 0.8rem; font-weight: 700; color: #fff;'>{mvp_name} <span style='color: var(--tappa-orange); margin-left: 5px;'>{mvp_val:.1f}</span></span>
+</div>"""
+        elif m_score:
+             import textwrap
+             mvp_section = f"""<div style='margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); text-align: center;'>
+<span style='font-size: 0.65rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em;'>Full Statistics Not Available</span>
+</div>"""
+
+        # Score formatting
+        if m_found:
+            score_html = f"<span style='font-family: \"Outfit\", sans-serif; font-weight: 900; font-size: 2.2rem; color: var(--tappa-orange); letter-spacing: 0.05em;'>{m_found['TeamStats']['t1']['PTS']} - {m_found['TeamStats']['t2']['PTS']}</span>"
+        elif m_score:
+            score_html = f"<span style='font-family: \"Outfit\", sans-serif; font-weight: 900; font-size: 2.2rem; color: var(--tappa-orange); letter-spacing: 0.05em;'>{m_score['s1']} - {m_score['s2']}</span>"
+        else:
+            score_html = "<span style='color: #444; font-size: 1.2rem; font-weight: 800; font-family: \"Montserrat\", sans-serif;'>VS</span>"
+
+        import textwrap
+        st.markdown(f"""<div style='background: {card_bg}; border: {border_width} solid {border_color}; border-radius: 16px; padding: 20px; margin-bottom: 20px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); {glow}'>
+<div style='display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;'>
+<div style='display: flex; flex-direction: column;'>
+<span style='font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px;'>{row['Time']} • {row['Court']}</span>
+<span style='font-size: 0.6rem; color: #666;'>ID: {row['Match ID']} | GROUP {row['Group']}</span>
+</div>
+<div style='background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; color: #aaa; border: 1px solid rgba(255,255,255,0.1);'>
+{row['Gender'].upper()}
+</div>
+</div>
+<div style='display: flex; align-items: center; justify-content: center; gap: 30px;'>
+<div style='flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center;'>
+<img src='{t1_logo}' style='width: 48px; height: 48px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));' />
+<span style='font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 0.9rem; color: #fff;'>{t1_name}</span>
+</div>
+<div style='display: flex; flex-direction: column; align-items: center; min-width: 100px;'>
+{score_html}
+</div>
+<div style='flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center;'>
+<img src='{t2_logo}' style='width: 48px; height: 48px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));' />
+<span style='font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 0.9rem; color: #fff;'>{t2_name}</span>
+</div>
+</div>
+{mvp_section}
+</div>""", unsafe_allow_html=True)
+
+        if match_id:
+            # Use a clever column layout for the button to make it look part of the card
+            _, btn_col, _ = st.columns([0.3, 0.4, 0.3])
+            with btn_col:
+                if st.button("📊 View Full Analytics", key=f"{key_prefix}_{row['Match ID']}_{idx}", use_container_width=True):
+                    st.session_state.active_tab = "MATCH DASHBOARD"
+                    st.session_state.jump_to_match = match_id
+                    st.rerun()
+
+def render_schedule_table(filtered_sch, raw_data_all):
+    if filtered_sch.empty:
+        st.info("No matches match the selected filters.")
+        return
+
+    import textwrap
+    
+    # Custom CSS for the grid-based table
+    st.markdown("""
+    <style>
+    .sch-row {
+        background: rgba(255,255,255,0.03); 
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding: 10px 0;
+        transition: background 0.2s;
+    }
+    .sch-row:hover {
+        background: rgba(255,255,255,0.06);
+    }
+    .sch-header {
+        background: rgba(255,133,51,0.08);
+        border-bottom: 2px solid var(--tappa-orange);
+        padding: 10px 0;
+        font-weight: bold;
+        color: #888;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+    .sch-cell {
+        display: flex;
+        align-items: center;
+        height: 100%;
+        padding-left: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Header Row
+    c1, c2, c3, c4, c5, c6 = st.columns([0.5, 1.2, 2.5, 0.6, 1.2, 1])
+    
+    with c1: st.markdown("<div class='sch-header' style='padding-left:10px;'>ID</div>", unsafe_allow_html=True)
+    with c2: st.markdown("<div class='sch-header'>Time / Court</div>", unsafe_allow_html=True)
+    with c3: st.markdown("<div class='sch-header'>Matchup</div>", unsafe_allow_html=True)
+    with c4: st.markdown("<div class='sch-header'>Group</div>", unsafe_allow_html=True)
+    with c5: st.markdown("<div class='sch-header'>Result</div>", unsafe_allow_html=True)
+    with c6: st.markdown("<div class='sch-header'>Action</div>", unsafe_allow_html=True)
+    
+    manual_scores = load_manual_scores()
+    
+    # Data Rows
+    for idx, row in filtered_sch.iterrows():
+        if pd.isna(row['Team A']):
+            continue
+            
+        m_found = get_match_obj(row, raw_data_all)
+        t1_name, t2_name = str(row['Team A']).strip(), str(row['Team B']).strip()
+        
+        # Time Logic
+        t_val = row['Time']
+        if pd.isna(t_val) or str(t_val).lower() == 'nan' or str(t_val).strip() == '':
+            t_val = "TBD"
+        
+        # Score Logic
+        score_text = "VS"
+        status_color = "#666"
+        status_text = "SCHEDULED"
+        
+        if m_found:
+            score_text = f"{m_found['TeamStats']['t1']['PTS']} - {m_found['TeamStats']['t2']['PTS']}"
+            status_text = "FINAL (STATS)"
+            status_color = "#4CAF50"
+        else:
+            m_key = f"{t1_name.upper()}_VS_{t2_name.upper()}_{row['Gender'].upper()}"
+            m_score = manual_scores.get(m_key)
+            if not m_score:
+                m_key_rev = f"{t2_name.upper()}_VS_{t1_name.upper()}_{row['Gender'].upper()}"
+                m_score = manual_scores.get(m_key_rev)
+                if m_score:
+                    score_text = f"{m_score['s2']} - {m_score['s1']}"
+                    status_text = "FINAL"
+                    status_color = "#FF9800"
+            else:
+                score_text = f"{m_score['s1']} - {m_score['s2']}"
+                status_text = "FINAL"
+                status_color = "#FF9800"
+        
+        # Row Container
+        with st.container():
+            c1, c2, c3, c4, c5, c6 = st.columns([0.5, 1.2, 2.5, 0.6, 1.2, 1])
+            
+            # ID
+            with c1: 
+                st.markdown(f"<div class='sch-cell' style='font-family:\"Outfit\"; font-weight:700; color:#555;'>{row['Match ID']}</div>", unsafe_allow_html=True)
+            
+            # Time/Court
+            with c2:
+                st.markdown(f"""
+                <div class='sch-cell' style='display:flex; flex-direction:column; align-items:flex-start; justify-content:center;'>
+                    <div style='font-size: 0.85rem; font-weight: 600;'>{t_val}</div>
+                    <div style='font-size: 0.65rem; color: #888;'>{row['Court']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Matchup
+            with c3:
+                st.markdown(f"""
+                <div class='sch-cell' style='display:flex; flex-direction:column; align-items:flex-start; justify-content:center;'>
+                     <div style='display: flex; align-items: center; gap: 8px;'>
+                        <span style='font-weight: 700; font-size: 0.9rem; color: #fff;'>{t1_name}</span>
+                        <span style='color: #444; font-size: 0.65rem; font-weight: 900;'>VS</span>
+                        <span style='font-weight: 700; font-size: 0.9rem; color: #fff;'>{t2_name}</span>
+                    </div>
+                    <div style='font-size: 0.65rem; color: #666; text-transform: uppercase;'>{row['Gender']} Division</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Group
+            with c4:
+                st.markdown(f"<div class='sch-cell' style='color:#aaa; font-size:0.8rem;'>{row['Group']}</div>", unsafe_allow_html=True)
+            
+            # Result
+            with c5:
+                st.markdown(f"""
+                <div class='sch-cell' style='display:flex; flex-direction:column; align-items:flex-start; justify-content:center;'>
+                    <div style='font-family:\"Outfit\"; font-weight:900; color:var(--tappa-orange); font-size:1.1rem;'>{score_text}</div>
+                    <div style='font-size:0.6rem; color:{status_color}; font-weight:700;'>{status_text}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Action (Button)
+            with c6:
+                if m_found:
+                    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True) # Spacer
+                    if st.button("📊 Stats", key=f"btn_stats_{row['Match ID']}_{idx}", use_container_width=True):
+                        st.session_state.active_tab = "MATCH DASHBOARD"
+                        # Assuming m_found has 'MatchId' or similar from raw_data
+                        # raw_data matches usually have 'MatchId' at root or similar? 
+                        # Actually get_match_obj returns the raw dict. 
+                        # Let's hope it has a uniquely identifiable ID. 
+                        # Looking at raw data structure from memory/logs, it's keyed likely.
+                        # Wait, get_match_obj returns an item from raw_data_list which is values of json.
+                        # It should have 'MatchId' or we use the loop key?
+                        # Let's assume 'MatchId' exists in the object or use row['Match ID'] mapping if needed.
+                        # The existing code used `row['Match ID']` for jump_to_match primarily? 
+                        # No, previously it passed `match_id` variable which came from where?
+                        # Ah, the previous card implementation used `match_id` variable.
+                        # Let's check `get_match_obj` return structure if possible or just try to be safe.
+                        # Standard raw data usually has 'MatchId'.
+                        # If not, we can try to use the schedule ID but that needs mapping.
+                        # But `get_match_obj` returns the FULL stats object. 
+                        # To jump to it, we need the ID that the dashboard uses to look it up.
+                        # The dashboard uses `st.session_state.jump_to_match`.
+                        # Let's assume for now we pass the Schedule ID and the dashboard handles mapping?
+                        # Or we pass the ID from `m_found` if available.
+                        
+                        target_id = m_found.get('MatchId')
+                        st.session_state.jump_to_match = str(target_id) if target_id else str(row['Match ID'])
+                        st.rerun()
+                else:
+                    st.markdown("<div class='sch-cell' style='color:#444; font-size:0.7rem;'>-</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='border-bottom: 1px solid rgba(255,255,255,0.05);'></div>", unsafe_allow_html=True)
+
+def style_rankings(df, title):
+    if df.empty: return f"<div style='padding:10px;'>No {title} Data</div>"
+    st.markdown(f"<h5 style='color: var(--tappa-orange); font-family: \"Space Grotesk\"; margin-bottom: 10px;'>{title}</h5>", unsafe_allow_html=True)
+    # Ensure columns exist
+    cols = ['Rank', 'Team', 'W', 'L']
+    if 'Diff' in df.columns: cols.append('Diff')
+    elif '+/-' in df.columns: cols.append('+/-')
+    
+    disp = df[cols].copy()
+    disp.columns = ['#', 'Team', 'W', 'L', '+/-']
+    st.dataframe(disp, hide_index=True, use_container_width=True)
 
 
 
@@ -285,6 +691,93 @@ def get_tournament_aggregates_v15(match_list, period="Full Game"):
         
     return df_final_p, df_final_t
 
+def calculate_power_rankings(raw_data_list):
+    # 1. Get Unified Standings (Record, PD, etc. for ALL teams)
+    # Note: We need schedule_df and manual_scores here.
+    # Ideally, we should pass them in, but for backward compatibility, load them here if needed.
+    df_sch = load_schedule()
+    manual_scores = load_manual_scores()
+    unified_standings = calculate_unified_standings(df_sch, manual_scores, raw_data_list)
+    df_unified = pd.DataFrame(unified_standings)
+    
+    if df_unified.empty:
+        return pd.DataFrame()
+
+    # 2. Get Advanced Stats for teams that have them
+    df_adv, _ = get_tournament_aggregates_v15(raw_data_list, "Full Game")
+    
+    # 3. Merge
+    # We want a master list of all teams.
+    # df_unified has: Team, Gender, Group, GP, W, L, PF, PA, PD, PTS
+    # df_adv has: Team, NetRtg, PIE, TS%, etc.
+    
+    # Init Rankings List
+    rankings = []
+    
+    for _, row in df_unified.iterrows():
+        team = row['Team']
+        
+        # Base Metric (Win % + PD Factor)
+        win_pct = row['W'] / row['GP'] if row['GP'] > 0 else 0
+        pd_norm = row['PD'] / row['GP'] if row['GP'] > 0 else 0
+        # Normalize PD: assume max PD is ~50.
+        pd_score = min(max(pd_norm / 50.0, -1.0), 1.0) * 20 # +/- 20 points impact
+        
+        base_score = (win_pct * 60) + 20 + pd_score # 0-80 range approx
+        
+        # Advanced Metric Bonus
+        adv_bonus = 0
+        has_stats = False
+        
+        if not df_adv.empty and team in df_adv['Team'].values:
+            has_stats = True
+            adv_row = df_adv[df_adv['Team'] == team].iloc[0]
+            
+            # Net Rating (-30 to +30 range approx) -> +/- 10
+            net = adv_row.get('NetRtg', 0)
+            net_score = min(max(net / 30.0, -1.0), 1.0) * 10
+            
+            # PIE (0 to 20 range approx, avg 10) -> +/- 5
+            # Actually PIE is % (e.g. 50%).
+            pie = adv_row.get('PIE', 50)
+            pie_score = ((pie - 50) / 20) * 10 # +/- 10
+            
+            adv_bonus = net_score + pie_score
+            
+            # Sanity cap
+            adv_bonus = min(max(adv_bonus, -15), 15)
+        
+        final_score = base_score + adv_bonus
+        
+        rankings.append({
+            "Team": team,
+            "Category": row['Gender'],
+            "Record": f"{row['W']}-{row['L']}",
+            "W": row['W'],
+            "L": row['L'],
+            "Diff": row['PD'],
+            "PD": row['PD'],
+            "Score": round(final_score, 1),
+            "HasStats": has_stats,
+            "Trend": 0 # Placeholder
+        })
+        
+    df_rank = pd.DataFrame(rankings)
+    if not df_rank.empty:
+        # Group sort by Category then Score to get Rank per category
+        # But wait, usually we filter by category later.
+        # So Rank should ideally be calculated per category?
+        # The old function returned a dict by category.
+        # Now we return one DF.
+        # If we calculate rank globally, it mixes Men and Women.
+        # We should calculate Rank per Category.
+        
+        df_rank = df_rank.sort_values(['Category', 'Score'], ascending=[True, False])
+        df_rank['Rank'] = df_rank.groupby('Category').cumcount() + 1
+        
+    return df_rank
+
+
 
 raw_data = load_data_v11()
 
@@ -432,37 +925,37 @@ with c_title:
                 kev_b64 = base64.b64encode(f.read()).decode()
         
         st.markdown(f"""<div style='text-align: center; margin-top: 0px;'>
-            <h1 style='margin: 0; font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 2.2rem; letter-spacing: -0.04em; color: #ffffff !important;'>
-                SN25 Stats by <span style='color: var(--tappa-orange);'>tappa.bb</span>
-            </h1>
-            <p style='color: var(--text-secondary); font-size: 0.8rem; margin: 4px 0 0 0; font-family: "Space Grotesk", sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px;'>
-                <span style='display: flex; align-items: center; gap: 4px;'>
-                    Powered by 
-                    <img src="data:image/svg+xml;base64,{tappa_b64}" style="height: 16px; vertical-align: middle;" />
-                    <a href="https://www.instagram.com/tappa.bb/" target="_blank" style='color: var(--tappa-orange); font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
-                        Tappa
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                        </svg>
-                    </a>
-                </span>
-                <span style='color: rgba(255, 255, 255, 0.3);'>|</span>
-                <span style='display: flex; align-items: center; gap: 4px;'>
-                    Made by 
-                    <img src="data:image/png;base64,{kev_b64}" style="height: 16px; vertical-align: middle; border-radius: 50%;" />
-                    <a href="https://www.instagram.com/thekevmedia/" target="_blank" style='color: #ff3333; font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
-                        Kev Media
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                        </svg>
-                    </a>
-                </span>
-            </p>
-        </div>""", unsafe_allow_html=True)
+<h1 style='margin: 0; font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 2.2rem; letter-spacing: -0.04em; color: #ffffff !important;'>
+SN25 Stats by <span style='color: var(--tappa-orange);'>tappa.bb</span>
+</h1>
+<p style='color: var(--text-secondary); font-size: 0.8rem; margin: 4px 0 0 0; font-family: "Space Grotesk", sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px;'>
+<span style='display: flex; align-items: center; gap: 4px;'>
+Powered by 
+<img src="data:image/svg+xml;base64,{tappa_b64}" style="height: 16px; vertical-align: middle;" />
+<a href="https://www.instagram.com/tappa.bb/" target="_blank" style='color: var(--tappa-orange); font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
+Tappa
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+<line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+</svg>
+</a>
+</span>
+<span style='color: rgba(255, 255, 255, 0.3);'>|</span>
+<span style='display: flex; align-items: center; gap: 4px;'>
+Made by 
+<img src="data:image/png;base64,{kev_b64}" style="height: 16px; vertical-align: middle; border-radius: 50%;" />
+<a href="https://www.instagram.com/thekevmedia/" target="_blank" style='color: #ff3333; font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 3px;'>
+Kev Media
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+<line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+</svg>
+</a>
+</span>
+</p>
+</div>""", unsafe_allow_html=True)
     
     with col_filter:
         st.markdown("<div style='margin-top: 10px;'>", unsafe_allow_html=True)
@@ -479,26 +972,389 @@ if cat_filter != "All":
 st.markdown("<hr style='margin: 10px 0; border: none; border-top: 1px solid rgba(255, 255, 255, 0.1);'>", unsafe_allow_html=True)
 
 
+
+
+
+
 # --- TOP LEVEL NAVIGATION ---
+if 'active_main_nav' not in st.session_state:
+    st.session_state.active_main_nav = "DASHBOARD"
 if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "MATCH DASHBOARD"
-if 'top_perf_mode' not in st.session_state:
-    st.session_state.top_perf_mode = "Daily View"
+    st.session_state.active_tab = "HOME"
 
-# Navigation bar using columns and buttons
-tabs = ["MATCH DASHBOARD", "TOP PERFORMANCES", "TOURNAMENT STATS", "PLAYER PROFILE", "COMPARISON"]
+NAV_GROUPS = {
+    "DASHBOARD": ["HOME"],
+    "TOURNAMENT HUB": ["SCHEDULE", "STANDINGS"],
+    "ANALYSIS": ["MATCH DASHBOARD", "COMPARISON"],
+    "LEADERBOARDS": ["TOP PERFORMANCES", "TOURNAMENT STATS"],
+    "PLAYER HUB": ["PLAYER PROFILE"]
+}
 
-c_nav = st.container()
-with c_nav:
-    cols = st.columns([1, 1, 1, 1, 1])
-    for i, tab in enumerate(tabs):
-        is_active = st.session_state.active_tab == tab
-        btn_type = "primary" if is_active else "secondary"
-        if cols[i].button(tab, key=f"nav_{tab}", use_container_width=True, type=btn_type):
-            st.session_state.active_tab = tab
+# Custom CSS for Navigation
+st.markdown("""
+    <style>
+    .nav-header {
+        text-align: center;
+        margin-bottom: 15px;
+    }
+    .main-nav-container {
+        display: flex;
+        gap: 10px;
+        padding: 6px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        backdrop-filter: blur(15px);
+        margin-bottom: 8px;
+    }
+    .sub-nav-container {
+        display: flex;
+        gap: 8px;
+        padding: 4px;
+        background: rgba(40, 40, 40, 0.2);
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    /* Streamlit button overrides for navigation */
+    div.stButton > button {
+        border-radius: 8px !important;
+        font-family: "Space Grotesk", sans-serif !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.05em !important;
+        transition: all 0.2s ease !important;
+    }
+    div.stButton > button:hover {
+        border-color: var(--tappa-orange) !important;
+        color: var(--tappa-orange) !important;
+        background: rgba(255, 107, 0, 0.05) !important;
+        transform: translateY(-1px);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Main Navigation Categories
+cols_main = st.columns(len(NAV_GROUPS))
+for i, group in enumerate(NAV_GROUPS.keys()):
+    is_active = st.session_state.active_main_nav == group
+    with cols_main[i]:
+        if st.button(group, key=f"main_nav_{group}", use_container_width=True, 
+                    type="primary" if is_active else "secondary"):
+            st.session_state.active_main_nav = group
+            st.session_state.active_tab = NAV_GROUPS[group][0]
             st.rerun()
 
-st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+# Sub-navigation for the active group
+active_group_tabs = NAV_GROUPS[st.session_state.active_main_nav]
+if len(active_group_tabs) > 1:
+    # Small spacer
+    st.markdown("<div style='height: 2px;'></div>", unsafe_allow_html=True)
+    
+    # We use a slightly smaller container or fewer columns for sub-nav
+    sub_cols = st.columns([1]*len(active_group_tabs) + [target for target in [8 - len(active_group_tabs)] if target > 0])
+    for i, tab in enumerate(active_group_tabs):
+        is_tab_active = st.session_state.active_tab == tab
+        with sub_cols[i]:
+            if st.button(tab, key=f"sub_nav_{tab}", use_container_width=True,
+                         type="primary" if is_tab_active else "secondary"):
+                st.session_state.active_tab = tab
+                st.rerun()
+
+st.markdown("<div style='height: 10px; border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 30px;'></div>", unsafe_allow_html=True)
+
+# --- HOME DASHBOARD ---
+if st.session_state.active_tab == "HOME":
+    # 1. Headline Stats / Leaders
+    st.markdown("""<div style='text-align: center; margin-bottom: 30px;'>
+<h2 style='font-family: "Montserrat", sans-serif; font-weight: 900; font-size: 1.8rem; text-transform: uppercase; letter-spacing: 0.1em; background: -webkit-linear-gradient(45deg, #FF6B00, #ff9e42); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;'>
+Tournament Overview
+</h2>
+<div style='height: 4px; width: 60px; background: var(--tappa-orange); margin: 8px auto; border-radius: 2px;'></div>
+</div>""", unsafe_allow_html=True)
+    
+    # Calculate Data
+
+    rankings = calculate_power_rankings(raw_data)
+    df_p, _ = get_tournament_aggregates_v15(raw_data, "Full Game")
+    
+    if not df_p.empty:
+        # Separate by Category
+        df_men = df_p[df_p['Category'] == 'Men']
+        df_women = df_p[df_p['Category'] == 'Women']
+
+        def get_top_stat(df, col):
+            return df.sort_values(by=col, ascending=False).head(3)
+
+        # Men's Leaders
+        m_pts = get_top_stat(df_men, 'PTS')
+        m_reb = get_top_stat(df_men, 'REB')
+        
+        # Women's Leaders
+        w_pts = get_top_stat(df_women, 'PTS')
+        w_reb = get_top_stat(df_women, 'REB')
+        
+        def render_leader_card(title, rows, metric_key):
+            # Use separate strings to avoid indentation issues in markdown
+            html = f"<div style='background: rgba(255,255,255,0.03); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px;'>"
+            html += f"<h4 style='font-family: \"Space Grotesk\", sans-serif; font-weight: 700; color: var(--tappa-orange); margin-top: 0; text-transform: uppercase; font-size: 0.9rem;'>{title}</h4>"
+            html += f"<div style='display: flex; flex-direction: column; gap: 12px; margin-top: 15px;'>"
+            
+            for i, r in rows.iterrows():
+                val = int(r[metric_key])
+                p_full = r['Player']
+                if "(" in p_full:
+                    p_name = p_full.split("(")[0].strip()
+                    p_team = p_full.split("(")[1].replace(")", "").strip()
+                else:
+                    p_name = p_full
+                    p_team = r['Team']
+
+                html += f"<div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;'>"
+                html += f"<div><div style='font-family: \"Montserrat\", sans-serif; font-weight: 600; font-size: 0.95rem; color: #fff;'>{p_name}</div>"
+                html += f"<div style='font-family: \"Space Grotesk\", sans-serif; font-size: 0.75rem; color: #888;'>{p_team}</div></div>"
+                html += f"<div style='font-family: \"Outfit\", sans-serif; font-size: 1.25rem; font-weight: 900; color: var(--tappa-orange);'>{val}</div></div>"
+            
+            html += "</div></div>"
+            return html
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(render_leader_card("🔥 Men's Scoring", m_pts, "PTS"), unsafe_allow_html=True)
+            st.markdown(render_leader_card("💪 Men's Rebounding", m_reb, "REB"), unsafe_allow_html=True)
+        with c2:
+            st.markdown(render_leader_card("🔥 Women's Scoring", w_pts, "PTS"), unsafe_allow_html=True)
+            st.markdown(render_leader_card("💪 Women's Rebounding", w_reb, "REB"), unsafe_allow_html=True)
+        
+    
+    st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+    
+    # --- MERGED HOME SECTION ---
+    col_home1, col_home2 = st.columns([0.65, 0.35])
+    
+    with col_home1:
+        st.markdown("<h4 style='font-family: \"Space Grotesk\", sans-serif; color: var(--tappa-orange); text-transform: uppercase;'>Today's Schedule & Results</h4>", unsafe_allow_html=True)
+        df_sch = load_schedule()
+        if not df_sch.empty:
+            # Filter for "Today" - based on metadata Jan 5th is Day 2
+            day_today = 2 
+            today_matches = df_sch[df_sch['Day'] == day_today]
+            if cat_filter != "All":
+                today_matches = today_matches[today_matches['Gender'] == cat_filter]
+            
+            if today_matches.empty:
+                st.write("No matches scheduled for today in this category.")
+            else:
+                # Court Wise Navigation
+                courts_available = sorted(today_matches['Court'].unique().tolist())
+                nav_tabs = ["ALL COURTS"] + [c.upper() for c in courts_available]
+                tabs_ui = st.tabs(nav_tabs)
+                
+                for idx, tab in enumerate(tabs_ui):
+                    with tab:
+                        with st.container(height=550, border=False):
+                            if idx == 0:
+                                subset = today_matches
+                            else:
+                                target_court = courts_available[idx-1]
+                                subset = today_matches[today_matches['Court'] == target_court]
+                            
+                            if subset.empty:
+                                st.info("No matches on this court.")
+                            else:
+                                render_schedule_table(subset, raw_data_all)
+            
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            if st.button("View Full Schedule", use_container_width=True, key="view_full_sch"):
+                st.session_state.active_tab = "SCHEDULE"
+                st.rerun()
+        else:
+            st.info("Schedule not available.")
+
+    with col_home2:
+        st.markdown("<h4 style='font-family: \"Space Grotesk\", sans-serif; color: var(--tappa-orange); text-transform: uppercase;'>Power Rankings</h4>", unsafe_allow_html=True)
+        # Filter rankings for View
+        if rankings.empty:
+            r_women = pd.DataFrame()
+            r_men = pd.DataFrame()
+        else:
+            r_women = rankings[rankings['Category'].astype(str).str.contains('Women', case=False, na=False)]
+            r_men = rankings[rankings['Category'].astype(str).str.contains('Men', case=False, na=False)]
+
+        if cat_filter == 'Women':
+            style_rankings(r_women, "Women's Division")
+        elif cat_filter == 'Men':
+            style_rankings(r_men, "Men's Division")
+        else:
+            style_rankings(r_men, "Men")
+            style_rankings(r_women, "Women")
+
+    # 3. Recent Matches Ticker
+    st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+    st.markdown("""<h3 style='font-family: "Montserrat", sans-serif; font-size: 1.0rem; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;'>
+Recent Results
+</h3>""", unsafe_allow_html=True)
+    
+    # Sort raw_data by MatchID (proxy for time) desc, take last 4
+    recents = raw_data[-4:] if len(raw_data) >= 4 else raw_data
+    recents = reversed(recents) # Newest first
+    
+    ticker_cols = st.columns(4)
+    for idx, m in enumerate(recents):
+        with ticker_cols[idx % 4]:
+            t1 = m['Teams']['t1']
+            t2 = m['Teams']['t2']
+            s1 = m['TeamStats']['t1']['PTS']
+            s2 = m['TeamStats']['t2']['PTS']
+            date_raw = m.get('Metadata', {}).get('MatchDate', 'Jan 2025')
+            # Extract simple date if format permits, else use raw
+            date_disp = date_raw.split(' ')[0] if ' ' in date_raw else date_raw
+            
+            # Formatting
+            w_team = t1 if s1 > s2 else t2
+            
+            # Card Style
+            st.markdown(textwrap.dedent(f"""\
+            <div style='background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)); border-radius: 10px; padding: 15px; border: 1px solid rgba(255,255,255,0.08); text-align: center; transition: transform 0.2s;'>
+                <div style='font-family: "Space Grotesk", sans-serif; font-size: 0.75rem; color: #aaa; margin-bottom: 8px; text-transform: uppercase;'>{date_disp}</div>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;'>
+                    <span style='font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 0.9rem; color: {"#fff" if s1 > s2 else "#888"};'>{t1}</span>
+                    <span style='font-family: "Outfit", sans-serif; font-weight: 900; font-size: 1.2rem; color: {"var(--tappa-orange)" if s1 > s2 else "#fff"};'>{s1}</span>
+                </div>
+                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                    <span style='font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 0.9rem; color: {"#fff" if s2 > s1 else "#888"};'>{t2}</span>
+                    <span style='font-family: "Outfit", sans-serif; font-weight: 900; font-size: 1.2rem; color: {"var(--tappa-orange)" if s2 > s1 else "#fff"};'>{s2}</span>
+                </div>
+            </div>
+            """), unsafe_allow_html=True)
+
+
+
+# --- STANDINGS DASHBOARD ---
+if st.session_state.active_tab == "STANDINGS":
+    st.markdown("""<div style='text-align: center; margin-bottom: 30px;'>
+    <h2 style='font-family: "Montserrat", sans-serif; font-weight: 900; font-size: 1.8rem; text-transform: uppercase; letter-spacing: 0.1em; background: -webkit-linear-gradient(45deg, #FF6B00, #ff9e42); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;'>
+    Group Standings
+    </h2>
+    <div style='height: 4px; width: 60px; background: var(--tappa-orange); margin: 8px auto; border-radius: 2px;'></div>
+    </div>""", unsafe_allow_html=True)
+    
+    # Calculate Unified Standings
+    df_sch = load_schedule()
+    manual_scores = load_manual_scores()
+    standings_data = calculate_unified_standings(df_sch, manual_scores, raw_data_all)
+    df_standings = pd.DataFrame(standings_data)
+    
+    if df_standings.empty:
+        st.info("No standings data available.")
+    else:
+        # Separate by Gender
+        tab_men, tab_women = st.tabs(["MEN'S DIVISION", "WOMEN'S DIVISION"])
+        
+        def render_group_table(df_g, group_name):
+            st.markdown(f"<h4 style='color: #888; margin-top: 20px; font-family:\"Space Grotesk\";'>GROUP {group_name}</h4>", unsafe_allow_html=True)
+            
+            # Sort: Wins DESC, PD DESC, PF DESC
+            df_g = df_g.sort_values(by=['W', 'PD', 'PF'], ascending=[False, False, False]).reset_index(drop=True)
+            
+            # Table Header
+            st.markdown("""
+            <div style='background: rgba(255,255,255,0.05); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='display: flex; background: rgba(255,133,51,0.1); padding: 10px; border-bottom: 2px solid var(--tappa-orange);'>
+                    <div style='flex: 3; font-weight: bold; font-size: 0.8rem; color: #fff;'>TEAM</div>
+                    <div style='flex: 1; text-align: center; font-weight: bold; font-size: 0.8rem; color: #aaa;'>GP</div>
+                    <div style='flex: 1; text-align: center; font-weight: bold; font-size: 0.8rem; color: #fff;'>W</div>
+                    <div style='flex: 1; text-align: center; font-weight: bold; font-size: 0.8rem; color: #fff;'>L</div>
+                    <div style='flex: 1; text-align: center; font-weight: bold; font-size: 0.8rem; color: #aaa;'>PD</div>
+                    <div style='flex: 1; text-align: center; font-weight: bold; font-size: 0.8rem; color: var(--tappa-orange);'>PTS</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            for i, r in df_g.iterrows():
+                bg = "rgba(255,255,255,0.02)" if i % 2 == 0 else "transparent"
+                st.markdown(f"""
+                <div style='display: flex; padding: 10px; background: {bg}; border-bottom: 1px solid rgba(255,255,255,0.03); align-items: center;'>
+                    <div style='flex: 3; font-weight: 700; font-family: "Montserrat"; color: #eee;'>{r['Team']}</div>
+                    <div style='flex: 1; text-align: center; color: #aaa; font-size: 0.9rem;'>{r['GP']}</div>
+                    <div style='flex: 1; text-align: center; color: #4CAF50; font-weight: 700; font-size: 0.9rem;'>{r['W']}</div>
+                    <div style='flex: 1; text-align: center; color: #F44336; font-weight: 700; font-size: 0.9rem;'>{r['L']}</div>
+                    <div style='flex: 1; text-align: center; color: #aaa; font-size: 0.9rem;'>{r['PD']}</div>
+                    <div style='flex: 1; text-align: center; color: var(--tappa-orange); font-weight: 900; font-size: 1.0rem;'>{r['PTS']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with tab_men:
+            df_m = df_standings[df_standings['Gender'] == "Men"]
+            if df_m.empty:
+                st.info("No Men's Data")
+            else:
+                groups = sorted(df_m['Group'].dropna().unique())
+                cols = st.columns(2)
+                for idx, g in enumerate(groups):
+                    with cols[idx % 2]:
+                        render_group_table(df_m[df_m['Group'] == g], g)
+        
+        with tab_women:
+            df_w = df_standings[df_standings['Gender'] == "Women"]
+            if df_w.empty:
+                st.info("No Women's Data")
+            else:
+                groups = sorted(df_w['Group'].dropna().unique())
+                cols = st.columns(2)
+                for idx, g in enumerate(groups):
+                    with cols[idx % 2]:
+                        render_group_table(df_w[df_w['Group'] == g], g)
+
+
+# --- SCHEDULE DASHBOARD ---
+if st.session_state.active_tab == "SCHEDULE":
+    st.markdown("""<div style='text-align: center; margin-bottom: 30px;'>
+<h2 style='font-family: "Montserrat", sans-serif; font-weight: 900; font-size: 1.8rem; text-transform: uppercase; letter-spacing: 0.1em; background: -webkit-linear-gradient(45deg, #FF6B00, #ff9e42); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;'>
+Tournament Schedule
+</h2>
+<div style='height: 4px; width: 60px; background: var(--tappa-orange); margin: 8px auto; border-radius: 2px;'></div>
+</div>""", unsafe_allow_html=True)
+
+    df_schedule = load_schedule()
+    
+    if df_schedule.empty:
+        st.warning("Schedule file not found.")
+    else:
+        # Daytime navigation strip
+        st.markdown("<div style='margin-bottom: 20px;'>", unsafe_allow_html=True)
+        unique_days = sorted(df_schedule['Day'].unique().tolist())
+        day_cols = st.columns(len(unique_days) + 1)
+        
+        if 'selected_day' not in st.session_state:
+            st.session_state.selected_day = "All"
+
+        if day_cols[0].button("ALL", type="primary" if st.session_state.selected_day == "All" else "secondary", use_container_width=True):
+            st.session_state.selected_day = "All"
+            st.rerun()
+
+        for d_idx, d_val in enumerate(unique_days):
+            if day_cols[d_idx+1].button(f"DAY {d_val}", type="primary" if st.session_state.selected_day == d_val else "secondary", use_container_width=True):
+                st.session_state.selected_day = d_val
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Small filter for Court
+        courts = ["All Courts"] + sorted(df_schedule['Court'].unique().tolist())
+        sel_court = st.selectbox("Court Filter", courts, label_visibility="collapsed")
+
+        filtered_sch = df_schedule.copy()
+        if st.session_state.selected_day != "All":
+            filtered_sch = filtered_sch[filtered_sch['Day'] == st.session_state.selected_day]
+        if sel_court != "All Courts":
+            filtered_sch = filtered_sch[filtered_sch['Court'] == sel_court]
+        
+        # Category cross-filter (from main layout)
+        if cat_filter != "All":
+            filtered_sch = filtered_sch[filtered_sch['Gender'] == cat_filter]
+
+        # Display Schedule in Compact Table View
+        render_schedule_table(filtered_sch, raw_data_all)
+
 
 # --- MATCH DASHBOARD ---
 if st.session_state.active_tab == "MATCH DASHBOARD":
@@ -555,15 +1411,27 @@ if st.session_state.active_tab == "MATCH DASHBOARD":
 
 
     # Match Selector
-    # Match Selector
     m_options = {f"{m['Teams']['t1']} vs {m['Teams']['t2']} ({m.get('Category', 'Unknown')})": str(m['MatchID']) for m in raw_data}
     
     if not m_options:
         st.warning("No matches found. Please check data source.")
         st.stop()
         
-    sel_label = st.selectbox("Select Match", options=list(m_options.keys()))
+    # Handle jump from Schedule
+    selected_index = 0
+    if 'jump_to_match' in st.session_state:
+        target_id = st.session_state.jump_to_match
+        for idx, (label, mid) in enumerate(m_options.items()):
+            if mid == target_id:
+                selected_index = idx
+                break
     
+    sel_label = st.selectbox("Select Match", options=list(m_options.keys()), index=selected_index)
+    
+    # Clear jump state after selection
+    if 'jump_to_match' in st.session_state:
+        del st.session_state.jump_to_match
+
     if sel_label is None:
         st.stop()
         
@@ -602,13 +1470,12 @@ if st.session_state.active_tab == "MATCH DASHBOARD":
     # ... [SCOREBOARD CODE REMAINS UNCHANGED UP TO NEXT SECTION] ...
     
     # Bold Modern Scoreboard
-    st.markdown("""
-    <div style='text-align: center; margin-bottom: 12px;'>
-        <h2 style='font-family: "Montserrat", sans-serif; font-weight: 900; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin: 0;'>
-            Match Scoreboard
-        </h2>
-    </div>
-    """, unsafe_allow_html=True)
+    import textwrap
+    st.markdown("""<div style='text-align: center; margin-bottom: 12px;'>
+<h2 style='font-family: "Montserrat", sans-serif; font-weight: 900; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin: 0;'>
+Match Scoreboard
+</h2>
+</div>""", unsafe_allow_html=True)
     
     col_t1, col_vs, col_t2 = st.columns([1, 0.15, 1])
     logo_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "assets", "teams")
@@ -627,46 +1494,52 @@ if st.session_state.active_tab == "MATCH DASHBOARD":
         winner_class = "winner-glow" if s1 > s2 else ""
         border_col = '#d16b07' if s1 > s2 else 'var(--border-glass)'
 
-        st.markdown(f"""<div class="glass-card {winner_class}" style="text-align: center; padding: 12px; border: 2px solid {border_col};">
-            <div style="margin: 0;">
-                <h3 style="font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1rem; color: var(--text-primary); margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.05em;">
-                    {t1}
-                </h3>
-                <div class="score-display" style="font-size: 3rem; font-weight: 400; line-height: 1; color: {'#ff8533' if s1 > s2 else 'var(--text-primary)'}; margin: 6px 0;">
-                    {s1}
-                </div>
-                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-glass);">
-                    <div class="stat-label" style="color: var(--text-muted); margin-bottom: 3px; font-size: 0.65rem;">MVP</div>
-                    <div style="color: var(--text-primary); font-size: 0.85rem; font-weight: 700; font-family: 'Inter', sans-serif;">{mvp1 if mvp1 else 'N/A'}</div>
-                    <div style="color: var(--tappa-orange); font-size: 0.7rem; font-weight: 600; margin-top: 2px;">{val1:.1f}</div>
+        st.markdown(textwrap.dedent(f"""\
+            <div class="glass-card {winner_class}" style="text-align: center; padding: 12px; border: 2px solid {border_col};">
+                <div style="margin: 0;">
+                    <h3 style="font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1rem; color: var(--text-primary); margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.05em;">
+                        {t1}
+                    </h3>
+                    <div class="score-display" style="font-size: 3rem; font-weight: 400; line-height: 1; color: {'#ff8533' if s1 > s2 else 'var(--text-primary)'}; margin: 6px 0;">
+                        {s1}
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-glass);">
+                        <div class="stat-label" style="color: var(--text-muted); margin-bottom: 3px; font-size: 0.65rem;">MVP</div>
+                        <div style="color: var(--text-primary); font-size: 0.85rem; font-weight: 700; font-family: 'Inter', sans-serif;">{mvp1 if mvp1 else 'N/A'}</div>
+                        <div style="color: var(--tappa-orange); font-size: 0.7rem; font-weight: 600; margin-top: 2px;">{val1:.1f}</div>
+                    </div>
                 </div>
             </div>
-        </div>""", unsafe_allow_html=True)
+        """), unsafe_allow_html=True)
 
     with col_vs:
-        st.markdown("""<div style="display: flex; align-items: center; justify-content: center; height: 100%;">
-            <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 1.5rem; color: var(--text-muted); letter-spacing: 0.05em;">VS</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(textwrap.dedent("""\
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%;">
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 1.5rem; color: var(--text-muted); letter-spacing: 0.05em;">VS</div>
+            </div>
+        """), unsafe_allow_html=True)
 
     with col_t2:
         winner_class = "winner-glow" if s2 > s1 else ""
         border_col = '#d16b07' if s2 > s1 else 'var(--border-glass)'
         
-        st.markdown(f"""<div class="glass-card {winner_class}" style="text-align: center; padding: 12px; border: 2px solid {border_col};">
-            <div style="margin: 0;">
-                <h3 style="font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1rem; color: var(--text-primary); margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.05em;">
-                    {t2}
-                </h3>
-                <div class="score-display" style="font-size: 3rem; font-weight: 400; line-height: 1; color: {'#ff8533' if s2 > s1 else 'var(--text-primary)'}; margin: 6px 0;">
-                    {s2}
-                </div>
-                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-glass);">
-                    <div class="stat-label" style="color: var(--text-muted); margin-bottom: 3px; font-size: 0.65rem;">MVP</div>
-                    <div style="color: var(--text-primary); font-size: 0.85rem; font-weight: 700; font-family: 'Inter', sans-serif;">{mvp2 if mvp2 else 'N/A'}</div>
-                    <div style="color: var(--tappa-orange); font-size: 0.7rem; font-weight: 600; margin-top: 2px;">{val2:.1f}</div>
+        st.markdown(textwrap.dedent(f"""\
+            <div class="glass-card {winner_class}" style="text-align: center; padding: 12px; border: 2px solid {border_col};">
+                <div style="margin: 0;">
+                    <h3 style="font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1rem; color: var(--text-primary); margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.05em;">
+                        {t2}
+                    </h3>
+                    <div class="score-display" style="font-size: 3rem; font-weight: 400; line-height: 1; color: {'#ff8533' if s2 > s1 else 'var(--text-primary)'}; margin: 6px 0;">
+                        {s2}
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-glass);">
+                        <div class="stat-label" style="color: var(--text-muted); margin-bottom: 3px; font-size: 0.65rem;">MVP</div>
+                        <div style="color: var(--text-primary); font-size: 0.85rem; font-weight: 700; font-family: 'Inter', sans-serif;">{mvp2 if mvp2 else 'N/A'}</div>
+                        <div style="color: var(--tappa-orange); font-size: 0.7rem; font-weight: 600; margin-top: 2px;">{val2:.1f}</div>
+                    </div>
                 </div>
             </div>
-        </div>""", unsafe_allow_html=True)
+        """), unsafe_allow_html=True)
 
     # --- MATCH RECAP ---
     narrative_text = ant.generate_match_narrative(m)
@@ -1147,7 +2020,7 @@ elif st.session_state.active_tab == "PLAYER PROFILE":
             gp = row_p.get('GP', 0)
             
             # Player Header Card
-            st.markdown(f"""
+            st.markdown(textwrap.dedent(f"""\
             <div class="glass-card" style='padding: 24px; margin-bottom: 24px; border-left: 4px solid var(--tappa-orange);'>
                 <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;'>
                     <div style='flex: 1; min-width: 250px;'>
@@ -1180,14 +2053,14 @@ elif st.session_state.active_tab == "PLAYER PROFILE":
                     </div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """), unsafe_allow_html=True)
 
             # 2. METRICS GRID
             col_left, col_right = st.columns([1, 1])
             
             with col_left:
                 # SHOOTING PROFILE CARD
-                st.markdown(f"""
+                st.markdown(textwrap.dedent(f"""\
                 <div class="glass-card" style='padding: 20px; height: 100%;'>
                     <h3 style='font-family: "Space Grotesk", sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;'>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m12 8 4 4-4 4M8 12h8"></path></svg>
@@ -1215,11 +2088,11 @@ elif st.session_state.active_tab == "PLAYER PROFILE":
                         </div>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
             
             with col_right:
                 # ADVANCED METRICS CARD
-                st.markdown(f"""
+                st.markdown(textwrap.dedent(f"""\
                 <div class="glass-card" style='padding: 20px; height: 100%;'>
                     <h3 style='font-family: "Space Grotesk", sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;'>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
@@ -1244,38 +2117,48 @@ elif st.session_state.active_tab == "PLAYER PROFILE":
                         </div>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
 
             # 3. SECONDARY STATS ROW (Counting/Context)
             st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
             c1, c2, c3, c4, c5 = st.columns(5)
             
             with c1:
-                st.markdown(f"""<div class='glass-card' style='padding: 12px; text-align: center;'>
-                    <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('STL', 0) / gp if gp > 0 else 0:.1f}</div>
-                    <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>STL/G</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(textwrap.dedent(f"""\
+                    <div class='glass-card' style='padding: 12px; text-align: center;'>
+                        <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('STL', 0) / gp if gp > 0 else 0:.1f}</div>
+                        <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>STL/G</div>
+                    </div>
+                """), unsafe_allow_html=True)
             with c2:
-                st.markdown(f"""<div class='glass-card' style='padding: 12px; text-align: center;'>
-                    <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('BLK', 0) / gp if gp > 0 else 0:.1f}</div>
-                    <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>BLK/G</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(textwrap.dedent(f"""\
+                    <div class='glass-card' style='padding: 12px; text-align: center;'>
+                        <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('BLK', 0) / gp if gp > 0 else 0:.1f}</div>
+                        <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>BLK/G</div>
+                    </div>
+                """), unsafe_allow_html=True)
             with c3:
-                st.markdown(f"""<div class='glass-card' style='padding: 12px; text-align: center;'>
-                    <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('TOV', 0) / gp if gp > 0 else 0:.1f}</div>
-                    <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>TOV/G</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(textwrap.dedent(f"""\
+                    <div class='glass-card' style='padding: 12px; text-align: center;'>
+                        <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('TOV', 0) / gp if gp > 0 else 0:.1f}</div>
+                        <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>TOV/G</div>
+                    </div>
+                """), unsafe_allow_html=True)
             with c4:
                 ast_to = (row_p.get('AST', 0) / row_p.get('TOV', 1)) if row_p.get('TOV', 0) > 0 else row_p.get('AST', 0)
-                st.markdown(f"""<div class='glass-card' style='padding: 12px; text-align: center;'>
-                    <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{ast_to:.1f}</div>
-                    <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>AST/TO</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(textwrap.dedent(f"""\
+                    <div class='glass-card' style='padding: 12px; text-align: center;'>
+                        <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{ast_to:.1f}</div>
+                        <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>AST/TO</div>
+                    </div>
+                """), unsafe_allow_html=True)
             with c5:
-                st.markdown(f"""<div class='glass-card' style='padding: 12px; text-align: center;'>
-                    <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('PF', 0) / gp if gp > 0 else 0:.1f}</div>
-                    <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>PF/G</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(textwrap.dedent(f"""\
+                    <div class='glass-card' style='padding: 12px; text-align: center;'>
+                        <div style='font-size: 1.1rem; font-weight: 700; font-family: "Outfit", sans-serif;'>{row_p.get('PF', 0) / gp if gp > 0 else 0:.1f}</div>
+                        <div style='font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; font-family: "Space Grotesk", sans-serif;'>PF/G</div>
+                    </div>
+                """), unsafe_allow_html=True)
 
     st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
     
@@ -1400,7 +2283,7 @@ elif st.session_state.active_tab == "COMPARISON":
     st.header("Player Comparison")
     
     # Get aggregated player data
-    df_p_all_comp, _ = get_tournament_aggregates_v13(raw_data)
+    df_p_all_comp, _ = get_tournament_aggregates_v15(raw_data, period="Full Game")
     
     if df_p_all_comp.empty:
         st.warning("No player data available.")
@@ -1688,11 +2571,7 @@ elif st.session_state.active_tab == "COMPARISON":
             
             table_html += '</tr>'
         
-        table_html += """
-            </tbody>
-        </table>
-        </div>
-        """
+        table_html += '</tbody></table></div>'
         
         st.markdown(table_html, unsafe_allow_html=True)
         
@@ -1702,13 +2581,11 @@ elif st.session_state.active_tab == "COMPARISON":
 
 # --- FOOTER ---
 st.divider()
-st.markdown("""
-<div style='text-align: center; margin-top: 32px; padding: 24px;'>
-    <div style='color: var(--text-secondary); font-size: 0.875rem; font-family: "Space Grotesk", sans-serif;'>
-        Powered by <span style='color: var(--tappa-orange); font-weight: 600;'>Tappa Pro Analytics</span>
-    </div>
-    <div style='color: var(--text-secondary); font-size: 0.75rem; margin-top: 8px; font-family: "Space Grotesk", sans-serif;'>
-        Made by <span style='color: var(--tappa-orange); font-weight: 600;'>Kev Media</span> | Data from Basketball India
-    </div>
+st.markdown("""<div style='text-align: center; margin-top: 32px; padding: 24px;'>
+<div style='color: var(--text-secondary); font-size: 0.875rem; font-family: "Space Grotesk", sans-serif;'>
+Powered by <span style='color: var(--tappa-orange); font-weight: 600;'>Tappa Pro Analytics</span>
 </div>
-""", unsafe_allow_html=True)
+<div style='color: var(--text-secondary); font-size: 0.75rem; margin-top: 8px; font-family: "Space Grotesk", sans-serif;'>
+Made by <span style='color: var(--tappa-orange); font-weight: 600;'>Kev Media</span> | Data from Basketball India
+</div>
+</div>""", unsafe_allow_html=True)

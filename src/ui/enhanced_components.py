@@ -15,7 +15,7 @@ def inject_custom_css():
     # Using a single triple-quoted string that starts immediately to avoid leading \n
     css = """<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
     /* GLOBAL RESET & TYPOGRAPHY */
     :root {
@@ -219,18 +219,16 @@ def create_stat_card(label, value, subtitle=None, trend=None, color="primary"):
     
     subtitle_html = f"<div style='color: var(--text-secondary); font-size: 0.875rem; margin-top: 4px; font-family: \"Space Grotesk\", sans-serif;'>{subtitle}</div>" if subtitle else ""
     
-    html = f"""
-    <div class="glass-card animate-fade-in" style="text-align: center; min-height: 140px;">
-        <div class="stat-label" style="color: var(--text-secondary); font-size: 0.7rem; margin-bottom: 12px;">
-            {label}
-        </div>
-        <div class="score-display" style="font-size: 2.5rem; font-weight: 700; color: {card_color}; line-height: 1;">
-            {value}
-        </div>
-        {subtitle_html}
-        {trend_html}
-    </div>
-    """
+    html = f"""<div class="glass-card animate-fade-in" style="text-align: center; min-height: 140px;">
+<div class="stat-label" style="color: var(--text-secondary); font-size: 0.7rem; margin-bottom: 12px;">
+{label}
+</div>
+<div class="score-display" style="font-size: 2.5rem; font-weight: 700; color: {card_color}; line-height: 1;">
+{value}
+</div>
+{subtitle_html}
+{trend_html}
+</div>"""
     
     st.markdown(html, unsafe_allow_html=True)
 
@@ -245,26 +243,22 @@ def create_team_score_card(team_name, score, logo_path=None, mvp_name=None, mvp_
     
     mvp_html = ""
     if mvp_name and mvp_score:
-        mvp_html = f"""
-        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-glass);">
-            <div class="stat-label" style="color: var(--text-secondary); font-size: 0.7rem; margin-bottom: 4px;">MVP</div>
-            <div style="color: var(--text-primary); font-size: 1rem; font-weight: 600; font-family: 'Space Grotesk', sans-serif;">{mvp_name}</div>
-            <div style="color: var(--tappa-orange); font-size: 0.875rem; font-family: 'Space Grotesk', sans-serif;">{mvp_score} GmScr</div>
-        </div>
-        """
+        mvp_html = f"""<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-glass);">
+<div class="stat-label" style="color: var(--text-secondary); font-size: 0.7rem; margin-bottom: 4px;">MVP</div>
+<div style="color: var(--text-primary); font-size: 1rem; font-weight: 600; font-family: 'Space Grotesk', sans-serif;">{mvp_name}</div>
+<div style="color: var(--tappa-orange); font-size: 0.875rem; font-family: 'Space Grotesk', sans-serif;">{mvp_score} GmScr</div>
+</div>"""
     
-    html = f"""
-    <div class="glass-card animate-slide-in" style="text-align: center; {winner_glow} {animation}">
-        {logo_html}
-        <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; font-family: 'General Sans', sans-serif;">
-            {team_name}
-        </div>
-        <div class="score-display" style="font-size: 4rem; font-weight: 800; background: linear-gradient(135deg, var(--tappa-orange), var(--accent-highlight)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1;">
-            {score}
-        </div>
-        {mvp_html}
-    </div>
-    """
+    html = f"""<div class="glass-card animate-slide-in" style="text-align: center; {winner_glow} {animation}">
+{logo_html}
+<div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; font-family: 'General Sans', sans-serif;">
+{team_name}
+</div>
+<div class="score-display" style="font-size: 4rem; font-weight: 800; background: linear-gradient(135deg, var(--tappa-orange), var(--accent-highlight)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1;">
+{score}
+</div>
+{mvp_html}
+</div>"""
     
     st.markdown(html, unsafe_allow_html=True)
 
@@ -346,13 +340,11 @@ def create_leader_board(df, stat_col, title, top_n=10, show_team=True):
     # Sort and get top N
     df_sorted = df.nlargest(top_n, stat_col).reset_index(drop=True)
     
-    st.markdown(f"""
-    <div style="margin-bottom: 12px;">
-        <h4 style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-primary); margin: 0 0 12px 0; border-left: 3px solid var(--tappa-orange); padding-left: 10px;">
-            {title}
-        </h4>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="margin-bottom: 12px;">
+<h4 style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-primary); margin: 0 0 12px 0; border-left: 3px solid var(--tappa-orange); padding-left: 10px;">
+{title}
+</h4>
+</div>""", unsafe_allow_html=True)
     
     for idx, row in df_sorted.iterrows():
         rank = idx + 1
@@ -386,40 +378,31 @@ def create_leader_board(df, stat_col, title, top_n=10, show_team=True):
         max_val = df_sorted[stat_col].max()
         progress_pct = (stat_value / max_val * 100) if max_val > 0 else 0
         
-        html = f"""
-        <div style="
-            background: rgba(255,255,255,0.02);
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin-bottom: 6px;
-            border: 1px solid {border_color};
-            transition: all 0.2s ease;
-        ">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
-                    <div style="{rank_bg} font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem; font-weight: 800; color: {rank_color}; min-width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
-                        {rank}
-                    </div>
-                    <div style="flex: 1;">
-                        <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 0px; font-family: 'Space Grotesk', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">
-                            {display_name}
-                        </div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 500; font-family: 'Space Grotesk', sans-serif; opacity: 0.7; text-transform: uppercase;">
-                            {team if show_team else ""}
-                        </div>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; align-items: flex-end; min-width: 45px;">
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 800; color: var(--tappa-orange); line-height: 1;">
-                        {display_stat}
-                    </div>
-                    <div style="background: rgba(255,255,255,0.05); height: 3px; border-radius: 1.5px; overflow: hidden; width: 30px; margin-top: 4px;">
-                        <div style="background: var(--tappa-orange); height: 100%; width: {progress_pct}%; border-radius: 1.5px;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        """
+        html = f"""<div style="background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; border: 1px solid {border_color}; transition: all 0.2s ease;">
+<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+<div style="{rank_bg} font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem; font-weight: 800; color: {rank_color}; min-width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
+{rank}
+</div>
+<div style="flex: 1;">
+<div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 0px; font-family: 'Space Grotesk', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">
+{display_name}
+</div>
+<div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 500; font-family: 'Space Grotesk', sans-serif; opacity: 0.7; text-transform: uppercase;">
+{team if show_team else ""}
+</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; min-width: 45px;">
+<div style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 800; color: var(--tappa-orange); line-height: 1;">
+{display_stat}
+</div>
+<div style="background: rgba(255,255,255,0.05); height: 3px; border-radius: 1.5px; overflow: hidden; width: 30px; margin-top: 4px;">
+<div style="background: var(--tappa-orange); height: 100%; width: {progress_pct}%; border-radius: 1.5px;"></div>
+</div>
+</div>
+</div>
+</div>"""
         
         st.markdown(html, unsafe_allow_html=True)
 

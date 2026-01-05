@@ -1,0 +1,147 @@
+{
+  "INDIAN RAILWAYS_VS_DELHI_WOMEN": {
+    "s1": 101,
+    "s2": 51,
+    "id": "1"
+  },
+  "KERALA_VS_GUJARAT_WOMEN": {
+    "s1": 91,
+    "s2": 22,
+    "id": "2"
+  },
+  "KARNATAKA_VS_GUJARAT_MEN": {
+    "s1": 104,
+    "s2": 69,
+    "id": "3"
+  },
+  "PUNJAB_VS_UTTAR PRADESH_MEN": {
+    "s1": 100,
+    "s2": 112,
+    "id": "4"
+  },
+  "MAHARASHTRA_VS_KARNATAKA_WOMEN": {
+    "s1": 71,
+    "s2": 91,
+    "id": "5"
+  },
+  "TAMIL NADU_VS_MADHYA PRADESH_WOMEN": {
+    "s1": 72,
+    "s2": 65,
+    "id": "6"
+  },
+  "TAMIL NADU_VS_RAJASTHAN_MEN": {
+    "s1": 101,
+    "s2": 68,
+    "id": "7"
+  },
+  "INDIAN RAILWAYS_VS_DELHI_MEN": {
+    "s1": 101,
+    "s2": 78,
+    "id": "8"
+  },
+  "HARYANA_VS_TRIPURA_MEN": {
+    "s1": 98,
+    "s2": 22,
+    "id": "26"
+  },
+  "BIHAR_VS_JHARKHAND_WOMEN": {
+    "s1": 48,
+    "s2": 12,
+    "id": "27"
+  },
+  "HARYANA_VS_GOA_WOMEN": {
+    "s1": 45,
+    "s2": 35,
+    "id": "28"
+  },
+  "ARUNACHAL PRADESH_VS_MANIPUR_WOMEN": {
+    "s1": 44,
+    "s2": 15,
+    "id": "29"
+  },
+  "KERALA_VS_WEST BENGAL_MEN": {
+    "s1": 80,
+    "s2": 79,
+    "id": "9"
+  },
+  "MADHYA PRADESH_VS_UTTARAKHAND_MEN": {
+    "s1": 108,
+    "s2": 45,
+    "id": "10"
+  },
+  "PUNJAB_VS_UTTARAKHAND_WOMEN": {
+    "s1": 72,
+    "s2": 28,
+    "id": "11"
+  },
+  "UTTAR PRADESH_VS_TELANGANA_WOMEN": {
+    "s1": 42,
+    "s2": 41,
+    "id": "12"
+  },
+  "HIMACHAL PRADESH_VS_PUDUCHERRY_WOMEN": {
+    "s1": 52,
+    "s2": 64,
+    "id": "13"
+  },
+  "ANDHRA PRADESH_VS_ASSAM_WOMEN": {
+    "s1": 43,
+    "s2": 58,
+    "id": "14"
+  },
+  "MEGHALAYA_VS_ODISHA_WOMEN": {
+    "s1": 56,
+    "s2": 44,
+    "id": "15"
+  },
+  "BIHAR_VS_MIZORAM_MEN": {
+    "s1": 68,
+    "s2": 60,
+    "id": "16"
+  },
+  "HIMACHAL PRADESH_VS_TELANGANA_MEN": {
+    "s1": 72,
+    "s2": 73,
+    "id": "17"
+  },
+  "ANDAMAN & NICOBAR_VS_SIKKIM_MEN": {
+    "s1": 32,
+    "s2": 60,
+    "id": "18"
+  },
+  "ASSAM_VS_NAGALAND_MEN": {
+    "s1": 50,
+    "s2": 41,
+    "id": "19"
+  },
+  "ANDHRA PRADESH_VS_PUDUCHERRY_MEN": {
+    "s1": 79,
+    "s2": 67,
+    "id": "20"
+  },
+  "ARUNACHAL PRADESH_VS_ODISHA_MEN": {
+    "s1": 39,
+    "s2": 115,
+    "id": "21"
+  },
+  "RAJASTHAN_VS_SIKKIM_WOMEN": {
+    "s1": 58,
+    "s2": 35,
+    "id": "22"
+  },
+  "JAMMU & KASHMIR_VS_JHARKHAND_MEN": {
+    "s1": 69,
+    "s2": 71,
+    "id": "23"
+  },
+  "GOA_VS_MAHARASHTRA_MEN": {
+    "s1": 67,
+    "s2": 68,
+    "id": "24"
+  },
+  "CHHATTISGARH_VS_MEGHALAYA_MEN": {
+    "s1": 73,
+    "s2": 48,
+    "id": "25"
+  }
+}
