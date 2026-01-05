@@ -1,41 +1,30 @@
-# Tappa Pro - Basketball Analytics Dashboard
+# 75th Senior National Basketball Championship - Analytics Platform
 
-A stat tracker from The Kev Media.Follow tappa.bb to get the best of Indian Basketball Stats.
+**Tappa Pro** is the official analytics partner for the 75th Senior National Basketball Championship. This platform provides real-time insights, advanced statistics, and comprehensive coverage of the tournament.
 
-## 🚀 Quick Start
+## 🏀 About the Platform
 
-### 1. Install Dependencies
+This dashboard serves as the central hub for coaches, analysts, and fans to track the performance of teams and players throughout the tournament.
 
-Ensure you have Python 3.9+ installed, then run:
+### Key Features
 
-```bash
-pip install -r requirements.txt
-```
+- **Live Match Tracking**: Real-time scores, play-by-play analysis, and box scores.
+- **Advanced Analytics**:
+  - **Player Efficiency**: PER, USG%, TS%, and more.
+  - **Team Metrics**: Four Factors, Offensive/Defensive Ratings.
+  - **Shot Charts**: Visual breakdown of shooting performance (coming soon).
+- **Deep Dive Profiles**: Detailed game logs and radar charts for every player.
+- **Tournament Leaderboards**: Auto-updated standings and stat leaders.
 
-### 2. Run the Application
+## 🏆 Powered By
 
-Launch the Streamlit dashboard:
+- **Analytics Engine**: Tappa.bb
+- **Data & Media**: The Kev Media
+- **Support**: NoLookNation
 
-```bash
-streamlit run src/hub_app.py
-```
+## ⚡ Deployment
 
-## 🛠 Features
+This application is built with **Streamlit** and optimized for cloud deployment.
 
-- **Match Dashboard**: Real-time score summaries and game logs.
-- **Tournament Stats**: Aggregated leaderboards and team comparisons.
-- **Player Profiles**: Deep dives into individual performance with visual radars.
-- **Comparison Tool**: Head-to-head analysis of players and teams.
-- **Social Studio**: Generate heat-mapped graphics for social media.
-
-## 📂 Project Structure
-
-- `src/hub_app.py`: Main entry point for the Streamlit dashboard.
-- `src/ui/`: Custom UI components and CSS injection logic.
-- `src/analytics.py`: Core logic for basketball stat calculation and normalization.
-- `data/processed/`: Contains the JSON data files that power the views.
-
-## 🤝 Developed By
-
-- **Powered by Tappa**
-- **Developed by the Kev Media**
+- **Production URL**: [Tappa Stats](https://tappastats.streamlit.app)
+- **Data Source**: Official FIBA LiveStats & Manual Tracking.

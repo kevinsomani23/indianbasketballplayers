@@ -38,24 +38,24 @@ data/derived_team_stats.json
 data/competition_stats/
 
 # Scripts
+src/scraping/
 src/scrape_*.py
 src/vibe_*.py
-!src/vibe_master_parser.py
+src/tournament_engine.py
 recover_data.py
 scrape_*.py
-
-# Exclude archived/transient data
-data/processed/73rd*
-data/processed/*_archived.json
-*.bak
-*.txt
-!requirements.txt
-!packages.txt
-*.md
-!README.md
+scripts/
 
 # Application Data (tracked)
 !compiled_schedule.csv
 !data/processed/data.json
 !data/processed/manual_scores.json
 !data/logos.json
+!data/competition_stats/
+
+# Exclude large/raw data
+matches/
+data/raw/
+data/links/
+data/processed/73rd*
+data/processed/*_archived.json
