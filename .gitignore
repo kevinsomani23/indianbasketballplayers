@@ -14,6 +14,9 @@ ENV/
 # (Excluded from app runtime)
 scripts/
 docs/
+tests/
+
+# Temp / Debug Files
 patch_*.py
 fix_*.py
 debug_*.py
@@ -22,40 +25,31 @@ inspect_*.py
 update_*.py
 check_*.py
 scrape_*.py
-src/scrape_*.py
+temp_*.py
+*.log
+*.txt
+!requirements.txt
+!packages.txt
+
+# Source Utils (if used for scraping only)
+src/scraping/
 src/vibe_*.py
 src/tournament_engine.py
-src/utils/
 
 # Raw data and large binary files
 matches/
 reports/
-web/
+web/assets/
 data/raw/
 data/links/
 data/pbp_data.csv
 data/derived_team_stats.json
-data/competition_stats/
+data/processed/73rd*
+data/processed/*_archived.json
 
-# Scripts
-src/scraping/
-src/scrape_*.py
-src/vibe_*.py
-src/tournament_engine.py
-recover_data.py
-scrape_*.py
-scripts/
-
-# Application Data (tracked)
+# Application Data (tracked intentionally)
 !compiled_schedule.csv
 !data/processed/data.json
 !data/processed/manual_scores.json
 !data/logos.json
 !data/competition_stats/
-
-# Exclude large/raw data
-matches/
-data/raw/
-data/links/
-data/processed/73rd*
-data/processed/*_archived.json
