@@ -36,6 +36,7 @@ try:
     import src.analytics as ant
     import src.ui.enhanced_components as ec
     import src.ui.social_generator as sg
+    from datetime import datetime
 except ImportError as e:
     st.error(f"Failed to import modules: {e}")
     st.stop()
@@ -1178,8 +1179,31 @@ Tournament Overview
         st.markdown("<h4 style='font-family: \"Space Grotesk\", sans-serif; color: var(--tappa-orange); text-transform: uppercase;'>Today's Schedule & Results</h4>", unsafe_allow_html=True)
         df_sch = load_schedule()
         if not df_sch.empty:
-            # Filter for "Today" - based on metadata Jan 5th is Day 2
-            day_today = 2 
+            # Filter for "Today" based on system date
+            try:
+                current_date = datetime.now().date()
+                # Parse 'Date' column more robustly
+                # Attempt explicit format first for DD-Mon-YYYY
+                df_sch['Date_Parsed'] = pd.to_datetime(df_sch['Date'].astype(str).str.strip(), format='%d-%b-%Y', errors='coerce').dt.date
+                
+                # If NaT exists, try fallback
+                if df_sch['Date_Parsed'].isna().any():
+                    # Fill NaTs with flexible parser
+                    mask = df_sch['Date_Parsed'].isna()
+                    df_sch.loc[mask, 'Date_Parsed'] = pd.to_datetime(df_sch.loc[mask, 'Date'], errors='coerce').dt.date
+
+                # Check for match
+                matches_today = df_sch[df_sch['Date_Parsed'] == current_date]
+                if not matches_today.empty:
+                    day_today = matches_today.iloc[0]['Day']
+                else:
+                    day_today = df_sch['Day'].min()
+            except Exception as e:
+                # Fallback on error
+                print(f"Date parsing error: {e}")
+                day_today = 1
+            
+            # day_today = 2 (Removed hardcode) 
             today_matches = df_sch[df_sch['Day'] == day_today]
             if cat_filter != "All":
                 today_matches = today_matches[today_matches['Gender'] == cat_filter]
