@@ -143,5 +143,143 @@
     "s1": 73,
     "s2": 48,
     "id": "25"
+  },
+  "PUNJAB_VS_GOA_WOMEN": {
+    "s1": 75,
+    "s2": 34,
+    "id": "69",
+    "date": "Jan_7_2026"
+  },
+  "HARYANA_VS_TRIPURA_WOMEN": {
+    "s1": 39,
+    "s2": 14,
+    "id": "70",
+    "date": "Jan_7_2026"
+  },
+  "TELANGANA_VS_JAMMU & KASHMIR_WOMEN": {
+    "s1": 67,
+    "s2": 45,
+    "id": "71",
+    "date": "Jan_7_2026"
+  },
+  "CHANDIGARH_VS_UTTAR PRADESH_WOMEN": {
+    "s1": 35,
+    "s2": 58,
+    "id": "72",
+    "date": "Jan_7_2026"
+  },
+  "MADHYA PRADESH_VS_GOA_MEN": {
+    "s1": 75,
+    "s2": 79,
+    "id": "73",
+    "date": "Jan_7_2026"
+  },
+  "KERALA_VS_JAMMU & KASHMIR_MEN": {
+    "s1": 74,
+    "s2": 38,
+    "id": "74",
+    "date": "Jan_7_2026"
+  },
+  "HARYANA_VS_CHHATTISGARH_MEN": {
+    "s1": 97,
+    "s2": 65,
+    "id": "75",
+    "date": "Jan_7_2026"
+  },
+  "UTTARAKHAND_VS_HARYANA_WOMEN": {
+    "s1": 40,
+    "s2": 50,
+    "id": "76",
+    "date": "Jan_7_2026"
+  },
+  "RAJASHTHAN_VS_BIHAR_WOMEN": {
+    "s1": 95,
+    "s2": 33,
+    "id": "77",
+    "date": "Jan_7_2026"
+  },
+  "JHARKHAND_VS_SIKKIM_WOMEN": {
+    "s1": 14,
+    "s2": 88,
+    "id": "78",
+    "date": "Jan_7_2026"
+  },
+  "MANIPUR_VS_PUDUCHERRY_WOMEN": {
+    "s1": 36,
+    "s2": 63,
+    "id": "79",
+    "date": "Jan_7_2026"
+  },
+  "UTTARAKHAND_VS_MAHARASHTRA_MEN": {
+    "s1": 50,
+    "s2": 87,
+    "id": "80",
+    "date": "Jan_7_2026"
+  },
+  "JHARKHAND_VS_WEST BENGAL_MEN": {
+    "s1": 54,
+    "s2": 65,
+    "id": "81",
+    "date": "Jan_7_2026"
+  },
+  "TELANGANA_VS_MIZORAM_MEN": {
+    "s1": 66,
+    "s2": 51,
+    "id": "82",
+    "date": "Jan_7_2026"
+  },
+  "BIHAR_VS_HIMACHAL PRADESH_MEN": {
+    "s1": 68,
+    "s2": 89,
+    "id": "83",
+    "date": "Jan_7_2026"
+  },
+  "ODISHA_VS_PUDUCHERRY_MEN": {
+    "s1": 70,
+    "s2": 56,
+    "id": "84",
+    "date": "Jan_7_2026"
+  },
+  "ANDHRA PRADESH_VS_MEGHALAYA_WOMEN": {
+    "s1": 26,
+    "s2": 38,
+    "id": "85",
+    "date": "Jan_7_2026"
+  },
+  "ODISHA_VS_ASSAM_WOMEN": {
+    "s1": 48,
+    "s2": 57,
+    "id": "86",
+    "date": "Jan_7_2026"
+  },
+  "HIMACHAL PRADESH_VS_ARUNACHAL PRADESH_WOMEN": {
+    "s1": 57,
+    "s2": 18,
+    "id": "87",
+    "date": "Jan_7_2026"
+  },
+  "ANDHRA PRADESH_VS_ARUNACHAL PRADESH_MEN": {
+    "s1": 87,
+    "s2": 39,
+    "id": "88",
+    "date": "Jan_7_2026"
+  },
+  "TRIPURA_VS_MEGHALAYA_MEN": {
+    "s1": 22,
+    "s2": 54,
+    "id": "89",
+    "date": "Jan_7_2026"
+  },
+  "NAGALAND_VS_SIKKIM_MEN": {
+    "s1": 55,
+    "s2": 27,
+    "id": "90",
+    "date": "Jan_7_2026"
+  },
+  "ASSAM_VS_ANDAMAN & NICOBAR_MEN": {
+    "s1": 95,
+    "s2": 38,
+    "id": "91",
+    "date": "Jan_7_2026"
   }
 }
