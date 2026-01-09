@@ -1,6 +1,90 @@
 import pandas as pd
 import numpy as np
 
+def apply_stat_rounding(df, mode="totals"):
+    """
+    Apply consistent rounding to all statistics in a DataFrame.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame containing statistics
+    mode : str
+        Display mode - "totals", "per_game", or "per_36"
+        
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with properly rounded statistics
+    """
+    df = df.copy()
+    
+    # Percentages - always 1 decimal
+    pct_cols = ["FG%", "3P%", "FT%", "eFG%", "TS%", "USG%", "AST%", 
+                "OREB%", "DREB%", "REB%", "TO RATIO", "AST RATIO",
+                "%FGM", "%FGA", "%3PM", "%3PA", "%FTM", "%FTA",
+                "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK",
+                "%BLKA", "%PF", "%PFD", "%PTS",
+                "%FGA 2PT", "%FGA 3PT", "%PTS 2PT", "%PTS 2PT MR", "%PTS 3PT",
+                "%PTS FBPS", "%PTS FT", "%PTS OFFTO", "%PTS PITP",
+                "2FGM %AST", "2FGM %UAST", "3FGM %AST", "3FGM %UAST",
+                "FGM %AST", "FGM %UAST"]
+    
+    for col in pct_cols:
+        if col in df.columns:
+            # Try to convert to numeric first, coercing errors to NaN
+            # This handles cases where data might be strings "50.5" or similar
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = df[col].round(1)
+    
+    # Advanced metrics - always 1 decimal
+    adv_cols = ["OFFRTG", "DEFRTG", "NETRTG", "PIE", "PACE", "PPoss",
+                "AST/TO", "GmScr", "FIC"]
+    
+    for col in adv_cols:
+        if col in df.columns:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = df[col].round(1)
+    
+    # MIN - check if numeric before rounding to avoid breaking "MM:SS" strings
+    for col in ["MIN", "Min", "MIN_CALC", "Mins"]:
+        if col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = df[col].round(1)
+            # If it's not numeric (e.g. "35:20"), leave it alone
+    
+    # Counting stats - depends on mode
+    count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA",
+                  "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK",
+                  "PF", "FD", "DD2", "TD3"]
+    
+    if mode in ["per_game", "per_36"]:
+        # Per-game/per-36: 1 decimal
+        for col in count_cols:
+            if col in df.columns:
+                if not pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = df[col].round(1)
+    else:
+        # Totals: integers
+        for col in count_cols:
+            if col in df.columns:
+                if not pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                # Fill NaNs with 0 before int conversion if needed, but safe round(0) keeps NaNs as NaNs
+                # To be safe for display:
+                df[col] = df[col].fillna(0).round(0).astype(int)
+    
+    # +/- - always 1 decimal (can be negative)
+    if "+/-" in df.columns:
+        if not pd.api.types.is_numeric_dtype(df["+/-"]):
+             df["+/-"] = pd.to_numeric(df["+/-"], errors='coerce')
+        df["+/-"] = df["+/-"].round(1)
+    
+    return df
+
 # Canonical Schema Mappings (Display -> Internal or Internal -> Display)
 TOTALS_MAP = {
     "GP": "G",
@@ -402,7 +486,9 @@ def prepare_display_data(df, mode="Standard", entity_type="Player", per_game=Fal
     df = df.copy()
     
     # 1. Apply formatting first (internal column names)
-    df = apply_standard_stat_formatting(df, per_game=per_game)
+    # Use the universal rounding function
+    mode_arg = "per_game" if per_game else "totals"
+    df = apply_stat_rounding(df, mode=mode_arg)
     
     # 2. Select renaming map
     rename_map = PER_GAME_MAP if per_game else TOTALS_MAP

@@ -451,11 +451,20 @@ def style_rankings(df, title):
 
 # Aggregation Logic moved to src.metrics_engine.py
 
-def calculate_power_rankings(raw_data_list):
+def calculate_power_rankings_v2(raw_data_list):
     # 1. Get Unified Standings (Record, PD, etc. for ALL teams)
     # Note: We need schedule_df and manual_scores here.
     # Ideally, we should pass them in, but for backward compatibility, load them here if needed.
     df_sch = dm.load_schedule()
+    
+    # --- FILTER: GROUP STAGE ONLY ---
+    # User Request: "groupings have changed significantly we only need standing from the group stage"
+    if not df_sch.empty and 'Group' in df_sch.columns:
+        # Filter OUT Knockout Stages to keep all Group variations (A, A1, B, E, H, etc.)
+        # User defined exclusion is safer than inclusion if names vary
+        exclude_stages = ["PQF", "Quarterfinal", "Semifinal", "Final", "LKO Final", "QF", "SF"]
+        df_sch = df_sch[~df_sch['Group'].isin(exclude_stages)].copy()
+        
     manual_scores = dm.load_manual_scores()
     unified_standings = calculate_unified_standings(df_sch, manual_scores, raw_data_list)
     df_unified = pd.DataFrame(unified_standings)
@@ -475,8 +484,79 @@ def calculate_power_rankings(raw_data_list):
     # Init Rankings List
     rankings = []
     
+    # --- MASTER GROUP MAPPING (USER DEFINED) ---
+    # Forces teams into correct groups regardless of schedule data
+    # --- MASTER GROUP MAPPING (USER DEFINED) ---
+    # Forces teams into correct groups regardless of schedule data (A1->A, etc.)
+
+
     for _, row in df_unified.iterrows():
         team = row['Team']
+        gender = row['Gender']
+        
+        assigned_group = row['Group'] # Default
+
+        # Look up in master map
+        # Note: keys in team_group_map are just team names. 
+        # But some teams (Indian Railways) are in both genders.
+        # So we must verify gender match or use a tuple key strategy if we changed the dictionary.
+        # But previous step used Team Name as key.
+        # FIX: The previous dictionary has duplicate keys if written literally in python dict construction!
+        # "Indian Railways" appears twice. The second one overwrites the first.
+        # We MUST use (Team, Gender) as key or separate dictionaries.
+        
+        # Let's fix the dictionary structure right now to be (Team, Gender) -> Group
+        pass
+
+    # --- CORRECTED DICTIONARY ---
+    # We will use a lookup function instead of a single dict to handle the content we just wrote.
+    # Actually, simpler: define the mapping list and iterate, as intended in previous step
+    
+    # RE-DEFINING MAPPING LIST WITHIN THE LOOP IS INEFFICIENT.
+    # Let's define the list once outside.
+    
+    mapping_list = [
+            ("Tamil Nadu", "Men", "A"), ("Karnataka", "Men", "A"), ("Services", "Men", "A"), ("Rajasthan", "Men", "A"), ("Gujarat", "Men", "A"),
+            ("Punjab", "Men", "B"), ("Indian Railways", "Men", "B"), ("Delhi", "Men", "B"), ("Uttar Pradesh", "Men", "B"), ("Chandigarh", "Men", "B"),
+            ("Kerala", "Men", "C"), ("Jammu & Kashmir", "Men", "C"), ("Jharkhand", "Men", "C"), ("West Bengal", "Men", "C"),
+            ("Madhya Pradesh", "Men", "D"), ("Goa", "Men", "D"), ("Maharashtra", "Men", "D"), ("Uttarakhand", "Men", "D"),
+            ("Haryana", "Men", "E"), ("Chhattisgarh", "Men", "E"), ("Meghalaya", "Men", "E"), ("Tripura", "Men", "E"),
+            ("Himachal Pradesh", "Men", "F"), ("Bihar", "Men", "F"), ("Mizoram", "Men", "F"), ("Telangana", "Men", "F"),
+            ("Andaman & Nicobar", "Men", "G"), ("Assam", "Men", "G"), ("Nagaland", "Men", "G"), ("Sikkim", "Men", "G"),
+            ("Andhra Pradesh", "Men", "H"), ("Arunachal Pradesh", "Men", "H"), ("Odisha", "Men", "H"), ("Puducherry", "Men", "H"),
+            # WOMEN
+            ("Indian Railways", "Women", "A"), ("Delhi", "Women", "A"), ("Chhattisgarh", "Women", "A"), ("Maharashtra", "Women", "A"), ("Karnataka", "Women", "A"),
+            ("Kerala", "Women", "B"), ("Tamil Nadu", "Women", "B"), ("Madhya Pradesh", "Women", "B"), ("Gujarat", "Women", "B"), ("West Bengal", "Women", "B"),
+            ("Punjab", "Women", "C"), ("Goa", "Women", "C"), ("Haryana", "Women", "C"), ("Tripura", "Women", "C"), ("Uttarakhand", "Women", "C"),
+            ("Uttar Pradesh", "Women", "D"), ("Chandigarh", "Women", "D"), ("Jammu & Kashmir", "Women", "D"), ("Telangana", "Women", "D"),
+            ("Rajasthan", "Women", "E"), ("Bihar", "Women", "E"), ("Jharkhand", "Women", "E"), ("Sikkim", "Women", "E"),
+            ("Himachal Pradesh", "Women", "F"), ("Arunachal Pradesh", "Women", "F"), ("Manipur", "Women", "F"), ("Puducherry", "Women", "F"),
+            ("Andhra Pradesh", "Women", "G"), ("Assam", "Women", "G"), ("Meghalaya", "Women", "G"), ("Odisha", "Women", "G")
+    ]
+    
+    # Convert to Dict for O(1) lookup: (Team, Gender) -> Group
+    # Normalize team names to title case or upper case to match data? 
+    # Data seems to be Title Case.
+    master_map = {(t, g): grp for t, g, grp in mapping_list}
+
+    for _, row in df_unified.iterrows():
+        team = row['Team']
+        gender = row['Gender']
+        
+        assigned_group = row['Group'] # Default
+        
+        # Override
+        # Mapping keys are Title Case (e.g. "Tamil Nadu"), but data might be uppercase ("TAMIL NADU")
+        lookup_team = team.title() 
+        # Handle special cases if title() messes up (e.g. "Idco" vs "IDCO", or "Services" vs "SERVICES")
+        # Generally title() is safe for these state names.
+        # But "Uttar Pradesh" -> "Uttar Pradesh". "UTTAR PRADESH" -> "Uttar Pradesh".
+        
+        if (lookup_team, gender) in master_map:
+             assigned_group = master_map[(lookup_team, gender)]
+        # Fallback: try direct match in case dictionary has some uppercase
+        elif (team, gender) in master_map:
+             assigned_group = master_map[(team, gender)]
         
         # Base Metric (Win % + PD Factor)
         win_pct = row['W'] / row['GP'] if row['GP'] > 0 else 0
@@ -511,17 +591,51 @@ def calculate_power_rankings(raw_data_list):
         final_score = base_score + adv_bonus
         
         rankings.append({
-            "Team": team,
-            "Category": row['Gender'],
+            "Team": team.title(), # Normalize to Title Case
+            "Category": row.get('Gender', 'Unknown'),
+            "Group": assigned_group,
             "Record": f"{row['W']}-{row['L']}",
+            "GP": row['GP'],
             "W": row['W'],
             "L": row['L'],
             "Diff": row['PD'],
             "PD": row['PD'],
+            "PF": row.get('PF', 0),
+            "PA": row.get('PA', 0),
+            "PTS": row.get('PTS', 0),
             "Score": round(final_score, 1),
             "HasStats": has_stats,
             "Trend": 0 # Placeholder
         })
+
+    # --- INJECT MISSING TEAMS FROM MAP ---
+    # Ensure all User-Defined teams appear even if they have 0 games
+    existing_teams = {(r['Team'].strip().title(), r['Category']) for r in rankings}
+    
+    for (team_name, team_gender), group_code in master_map.items():
+        if (team_name.strip().title(), team_gender) not in existing_teams:
+            # Add with 0 stats
+             rankings.append({
+                "Team": team_name, # Use proper title case name from valid map
+                "Category": team_gender,
+                "Group": group_code,
+                "Record": "0-0",
+                "GP": 0,
+                "W": 0,
+                "L": 0,
+                "Diff": 0,
+                "PD": 0,
+                "PF": 0,
+                "PA": 0,
+                "PTS": 0,
+                "Score": 0.0,
+                "HasStats": False,
+                "Trend": 0
+            })
+            
+    # Filter out "W/O" placeholders or invalid teams
+    rankings = [r for r in rankings if "W/O" not in r['Team'] and r['Group'] not in ["A1", "B1", "A2", "B2"]]
+
         
     df_rank = pd.DataFrame(rankings)
     if not df_rank.empty:
@@ -546,7 +660,14 @@ try:
     if isinstance(raw_data_dict, list):
         raw_data = raw_data_dict
     else:
-        raw_data = raw_data_dict.get("Matches", [])
+        # Check for wrapped structure first
+        if "Matches" in raw_data_dict:
+            raw_data = raw_data_dict["Matches"]
+        elif "matches" in raw_data_dict:
+            raw_data = raw_data_dict["matches"]
+        else:
+            # Production structure: dict with match IDs as keys
+            raw_data = list(raw_data_dict.values())
 except NameError:
     # Fallback if v12 unavailable (should not happen)
     st.error("Data loader v12 not found. Please restart app.")
@@ -770,7 +891,7 @@ if 'active_tab' not in st.session_state:
 
 NAV_GROUPS = {
     "DASHBOARD": ["HOME"],
-    "TOURNAMENT HUB": ["SCHEDULE", "STANDINGS"],
+    "TOURNAMENT HUB": ["SCHEDULE", "STANDINGS", "BRACKET"],
     "GAME CENTRE": ["MATCH DASHBOARD"],
     "LEADERBOARDS": ["TOP PERFORMANCES", "TOURNAMENT STATS"],
     "PLAYER HUB": ["PLAYER PROFILE", "COMPARISON"]
@@ -865,7 +986,7 @@ Tournament Overview
     
     # Calculate Data
 
-    rankings = calculate_power_rankings(raw_data)
+    rankings = calculate_power_rankings_v2(raw_data)
     df_p, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
     
     if not df_p.empty:
@@ -1053,17 +1174,12 @@ if st.session_state.active_tab == "STANDINGS":
     </div>""", unsafe_allow_html=True)
     
     # Calculate Unified Standings
-    df_sch = dm.load_schedule()
-    manual_scores_df = dm.load_manual_scores()
-    standings_data = calculate_unified_standings(df_sch, manual_scores_df, raw_data_all)
-    df_standings = pd.DataFrame(standings_data)
+    # Calculate Unified Standings via Central Function
+    df_standings = calculate_power_rankings_v2(raw_data_all)
     
     if df_standings.empty:
         st.info("No standings data available.")
     else:
-        # Separate by Gender
-        tab_men, tab_women = st.tabs(["MEN'S DIVISION", "WOMEN'S DIVISION"])
-        
         def render_group_table(df_g, group_name):
             st.markdown(f"<h4 style='color: #888; margin-top: 20px; font-family:\"Space Grotesk\";'>GROUP {group_name}</h4>", unsafe_allow_html=True)
             
@@ -1098,27 +1214,45 @@ if st.session_state.active_tab == "STANDINGS":
             
             st.markdown("</div>", unsafe_allow_html=True)
 
-        with tab_men:
-            df_m = df_standings[df_standings['Gender'] == "Men"]
-            if df_m.empty:
-                st.info("No Men's Data")
-            else:
-                groups = sorted(df_m['Group'].dropna().unique())
+        tab_men, tab_women = st.tabs(["Men's Division", "Women's Division"])
+        
+        def get_level(gender, group):
+            # Level 1 is STRICTLY Group A and B for both Men and Women (per User Feedback)
+            return "Level 1" if group in ["A", "B"] else "Level 2"
+
+        def _render_level_section(df_gender, gender):
+            # Split by Level
+            groups = sorted(df_gender['Group'].dropna().unique())
+            l1_groups = [g for g in groups if get_level(gender, g) == "Level 1"]
+            l2_groups = [g for g in groups if get_level(gender, g) == "Level 2"]
+            
+            if l1_groups:
+                st.markdown("<h3 style='color: var(--tappa-orange); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-top: 20px;'>Level 1</h3>", unsafe_allow_html=True)
                 cols = st.columns(2)
-                for idx, g in enumerate(groups):
+                for idx, g in enumerate(l1_groups):
                     with cols[idx % 2]:
-                        render_group_table(df_m[df_m['Group'] == g], g)
+                        render_group_table(df_gender[df_gender['Group'] == g], g)
+                        
+            if l2_groups:
+                st.markdown("<h3 style='color: var(--tappa-orange); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-top: 40px;'>Level 2</h3>", unsafe_allow_html=True)
+                cols = st.columns(2)
+                for idx, g in enumerate(l2_groups):
+                    with cols[idx % 2]:
+                        render_group_table(df_gender[df_gender['Group'] == g], g)
+
+        with tab_men:
+            df_m = df_standings[df_standings['Category'] == "Men"]
+            if df_m.empty:
+                 st.info("No Men's Data")
+            else:
+                 _render_level_section(df_m, "Men")
         
         with tab_women:
-            df_w = df_standings[df_standings['Gender'] == "Women"]
+            df_w = df_standings[df_standings['Category'] == "Women"]
             if df_w.empty:
                 st.info("No Women's Data")
             else:
-                groups = sorted(df_w['Group'].dropna().unique())
-                cols = st.columns(2)
-                for idx, g in enumerate(groups):
-                    with cols[idx % 2]:
-                        render_group_table(df_w[df_w['Group'] == g], g)
+                _render_level_section(df_w, "Women")
 
 
 # --- SCHEDULE DASHBOARD ---
@@ -1702,7 +1836,7 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
             # TAB 2: STANDARD STATS (Table)
             with tab_std:
                 std_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%", 
-                           "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-"]
+                           "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-", "GmScr"]
                 # Filter to available columns
                 available_cols = [c for c in std_cols if c in df_view.columns]
                 
@@ -1719,11 +1853,8 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                 # Add Rank column
                 df_std.insert(0, "Rank", range(1, len(df_std) + 1))
                 
-                # Round percentage columns to 1 decimal place
-                pct_cols = ["FG%", "3P%", "FT%"]
-                for col in pct_cols:
-                    if col in df_std.columns:
-                        df_std[col] = df_std[col].round(1)
+                # Apply universal rounding (totals mode for box scores)
+                df_std = ant.apply_stat_rounding(df_std, mode="totals")
                 
                 # Apply styling to highlight max values
                 def highlight_max(s):
@@ -1734,6 +1865,7 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                     return ['' for _ in s]
                 
                 # Create format dict for percentage columns
+                pct_cols = ["FG%", "3P%", "FT%", "Min", "GmScr"]
                 format_dict = {}
                 for col in pct_cols:
                     if col in df_std.columns:
@@ -1769,12 +1901,8 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                 # Add Rank column
                 df_adv.insert(0, "Rank", range(1, len(df_adv) + 1))
                 
-                # Round numeric columns to 1 decimal place
-                numeric_cols = ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", "OREB%", "DREB%", "REB%", 
-                               "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss"]
-                for col in numeric_cols:
-                    if col in df_adv.columns:
-                        df_adv[col] = df_adv[col].round(1)
+                # Apply universal rounding (totals mode for box scores)
+                df_adv = ant.apply_stat_rounding(df_adv, mode="totals")
                 
                 # Apply styling to highlight max values
                 def highlight_max(s):
@@ -1785,6 +1913,8 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                     return ['' for _ in s]
                 
                 # Create format dict for numeric columns
+                numeric_cols = ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", "OREB%", "DREB%", "REB%", 
+                               "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss", "MIN"]
                 format_dict = {}
                 for col in numeric_cols:
                     if col in df_adv.columns:
@@ -1901,6 +2031,9 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                             if "PTS" in df_usg.columns and "TmPTS" in df_usg.columns:
                                 df_usg["%PTS"] = (df_usg["PTS"] / df_usg["TmPTS"].replace(0, 1) * 100).fillna(0).round(1)
                             
+                            # Apply universal rounding (totals mode)
+                            df_usg = ant.apply_stat_rounding(df_usg, mode="totals")
+                            
                             # Select columns for display
                             usg_cols = ["Player", "Team", "Opponent", "Date", "USG%", "%FGM", "%FGA", "%3PM", "%3PA", 
                                        "%FTM", "%FTA", "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK", "%PF", "%PFD", "%PTS"]
@@ -1961,6 +2094,9 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
                     if "3FGM_AST" in df_scoring.columns:
                         df_scoring["3FGM_%AST"] = (df_scoring["3FGM_AST"] / df_scoring["3PM"] * 100).fillna(0).round(1)
                         df_scoring["3FGM_%UAST"] = (100 - df_scoring["3FGM_%AST"]).round(1)
+                    
+                    # Apply universal rounding (totals mode)
+                    df_scoring = ant.apply_stat_rounding(df_scoring, mode="totals")
                     
                     # Select columns
                     scoring_cols = ["Player", "Team", "Opponent", "Date", "%FGA_2PT", "%FGA_3PT", 
@@ -2060,6 +2196,13 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
         if not df_display.empty:
             sort_col = "PTS" if "PTS" in df_display.columns else df_display.columns[0]
             df_display = df_display.sort_values(by=sort_col, ascending=False)
+            
+            # Apply universal rounding to the display dataframe (fixes Leaderboards)
+            rounding_mode = "totals"
+            if stat_mode == "Per Game": rounding_mode = "per_game"
+            elif stat_mode == "Per 36 Min": rounding_mode = "per_36"
+            
+            df_display = ant.apply_stat_rounding(df_display, mode=rounding_mode)
         
         # --- DISPLAY ---
         ts_leaders, ts1, ts2, ts_usg, ts_scoring = st.tabs(["Leaders", "Standard Stats", "Advanced Stats", "USG", "SCORING"])
@@ -2102,7 +2245,7 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
         with ts1:
             # Use same detailed columns as Top Performance
             std_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%", 
-                       "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-"]
+                       "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-", "GmScr"]
             
             # Filter to available columns
             available_cols = [c for c in std_cols if c in df_display.columns]
@@ -2120,34 +2263,30 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
             # Add Rank column
             df_std.insert(0, "Rank", range(1, len(df_std) + 1))
             
-            # Round all numeric columns appropriately
-            # Percentages: 1 decimal
-            pct_cols = ["FG%", "3P%", "FT%"]
-            for col in pct_cols:
-                if col in df_std.columns:
-                    df_std[col] = df_std[col].round(1)
-            
-            # Counting stats: integers for totals, 1 decimal for per-game
-            if stat_mode in ["Per Game", "Per 36 Min"]:
-                count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "+/-", "Min"]
-                for col in count_cols:
-                    if col in df_std.columns:
-                        df_std[col] = df_std[col].round(1)
+            # Apply universal rounding based on mode
+            if stat_mode == "Per Game":
+                df_std = ant.apply_stat_rounding(df_std, mode="per_game")
+            elif stat_mode == "Per 36 Min":
+                df_std = ant.apply_stat_rounding(df_std, mode="per_36")
             else:
-                count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "+/-"]
-                for col in count_cols:
-                    if col in df_std.columns:
-                        df_std[col] = df_std[col].round(0).astype(int)
+                df_std = ant.apply_stat_rounding(df_std, mode="totals")
             
+            # Define column groups for formatting
+            count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA",
+                          "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK",
+                          "PF", "FD", "DD2", "TD3"]
+                          
             # Apply styling to highlight max values
             def highlight_max(s):
                 """Highlight the maximum in a Series."""
-                if s.name in ["PTS", "REB", "AST", "STL", "BLK", "FGM", "3PM", "FTM"]:
+                if s.name in count_cols: # Use predefined count_cols instead of hardcoded list
                     is_max = s == s.max()
                     return ['background-color: rgba(255, 133, 51, 0.3); font-weight: bold' if v else '' for v in is_max]
                 return ['' for _ in s]
             
             # Create format dict for percentage columns
+            pct_cols = ["FG%", "3P%", "FT%", "eFG%", "TS%", "USG%", "AST%", 
+                       "OREB%", "DREB%", "REB%", "TO RATIO", "AST RATIO"]
             format_dict = {}
             for col in pct_cols:
                 if col in df_std.columns:
@@ -2194,14 +2333,11 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
                 df_adv = df_adv.rename(columns={"MIN_CALC": "MIN"})
             
             # Add Rank column
+            # Add Rank column
             df_adv.insert(0, "Rank", range(1, len(df_adv) + 1))
             
-            # Round all advanced stats to 1 decimal place
-            numeric_cols = ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", "OREB%", "DREB%", "REB%", 
-                           "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss", "MIN"]
-            for col in numeric_cols:
-                if col in df_adv.columns:
-                    df_adv[col] = df_adv[col].round(1)
+            # Apply universal rounding (use totals mode for advanced stats)
+            df_adv = ant.apply_stat_rounding(df_adv, mode="totals")
             
             # Apply styling to highlight max values
             def highlight_max(s):
@@ -2283,6 +2419,9 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
                                     
                          display_cols = [c for c in usg_cols if c in df_usg.columns]
                          
+                         # Apply universal rounding (totals mode)
+                         df_usg = ant.apply_stat_rounding(df_usg, mode="totals")
+                         
                          # Sort by USG% descending
                          if "USG%" in df_usg.columns:
                              df_usg = df_usg.sort_values("USG%", ascending=False)
@@ -2334,17 +2473,8 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
                     # Sort by PTS
                     df_scoring_display = df_scoring.sort_values(by="PTS", ascending=False).head(100).reset_index(drop=True)
                     
-                    # Round all percentage columns to 1 decimal
-                    pct_cols_scoring = [c for c in df_scoring_display.columns if c.startswith('%')]
-                    for col in pct_cols_scoring:
-                        if col in df_scoring_display.columns:
-                            df_scoring_display[col] = df_scoring_display[col].round(1)
-                    
-                    # Round point totals to integers
-                    pts_cols = ["PTS_2PT", "PTS_3PT", "PTS_FT"]
-                    for col in pts_cols:
-                        if col in df_scoring_display.columns:
-                            df_scoring_display[col] = df_scoring_display[col].round(0).astype(int)
+                    # Apply universal rounding (totals mode)
+                    df_scoring_display = ant.apply_stat_rounding(df_scoring_display, mode="totals")
                     
                     # Add Rank
                     df_scoring_display.insert(0, "Rank", range(1, len(df_scoring_display) + 1))
@@ -2357,10 +2487,323 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
                 st.info("Scoring stats available for Players view only")
 
 
+# --- BRACKET ---
+elif st.session_state.active_tab == "BRACKET":
+    st.markdown("""
+    <h2 style='text-align: center; margin-bottom: 24px; font-family: "Space Grotesk", sans-serif;'>TOURNAMENT BRACKET</h2>
+    """, unsafe_allow_html=True)
+    
+    # Gender Filter
+    b_gender = st.radio("Select Division", ["Men", "Women"], horizontal=True, key="bracket_gender")
+    
+    # Load Schedule for Bracket Data
+    df_sch_bracket = dm.load_schedule()
+    manual_scores_bracket = dm.load_manual_scores()
+    
+    if df_sch_bracket.empty:
+        st.info("Schedule data not available for brackets.")
+    else:
+        # Filter for Selected Gender
+        df_sch_bracket = df_sch_bracket[df_sch_bracket['Gender'] == b_gender].copy()
+        
+        # Define Bracket Stages
+        # We need to gather matches for: QF, SF, Final
+        # Assuming PQF feeds into QF, but for visual simplicity, let's start with QF -> SF -> Final
+        # Or if PQF is important, we can add it. User asked for "Brackets for knockouts".
+        
+        
+        bracket_rounds = ["Pre-Quarterfinals", "Quarterfinals", "Semifinals", "Finals"]
+        
+        # Prepare data structure
+        bracket_data = {
+            "Pre-Quarterfinals": [],
+            "Quarterfinals": [],
+            "Semifinals": [],
+            "Finals": []
+        }
+        
+        # Helper to find match
+        def find_match(term, exclude=None):
+            # Term could be "QF 1", "SF 1", "Final"
+            matches = df_sch_bracket[df_sch_bracket['Match ID'].str.contains(term, case=False, na=False)]
+            if exclude:
+                matches = matches[~matches['Match ID'].str.contains(exclude, case=False, na=False)]
+                
+            if not matches.empty:
+                return matches.iloc[0]
+            return None
+            
+        # Helper to format match Node
+        def format_node(m_row):
+            if m_row is None:
+                return {"t1": "TBD", "t2": "TBD", "s1": "-", "s2": "-", "status": "Scheduled", "winner": None}
+            
+            t1 = m_row['Team A']
+            t2 = m_row['Team B']
+            
+            # Check for score
+            m_key = f"{t1.upper()}_VS_{t2.upper()}_{m_row['Gender'].upper()}"
+            m_score = manual_scores_bracket.get(m_key)
+            
+            if not m_score:
+                 # Try reverse key
+                 m_key_rev = f"{t2.upper()}_VS_{t1.upper()}_{m_row['Gender'].upper()}"
+                 m_score_rev = manual_scores_bracket.get(m_key_rev)
+                 if m_score_rev:
+                     m_score = {"s1": m_score_rev["s2"], "s2": m_score_rev["s1"]}
+            
+            s1 = m_score['s1'] if m_score else "-"
+            s2 = m_score['s2'] if m_score else "-"
+            
+            winner = None
+            if s1 != "-" and s2 != "-":
+                winner = t1 if int(s1) > int(s2) else t2
+            
+            return {
+                "t1": t1, "t2": t2, 
+                "s1": s1, "s2": s2, 
+                "status": "Final" if s1 != "-" else "Scheduled",
+                "winner": winner
+            }
 
+        # --- POPULATE DATA ---
+        
+        # --- POPULATE DATA ---
+        
+        # Pre-Quarterfinals (Dynamic Fetch)
+        # Fetch all matches labeled "PQF" for the selected gender
+        pqf_matches = df_sch_bracket[df_sch_bracket['Match ID'].str.contains("PQF", case=False, na=False)]
+        
+        if not pqf_matches.empty:
+            for _, row in pqf_matches.iterrows():
+                bracket_data["Pre-Quarterfinals"].append(format_node(row))
+        else:
+             # If no PQF for this gender, leave empty or add placeholder if strict structure needed
+             # For now, leaving empty means the column will be empty, which is fine
+             pass
 
-# --- PLAYER PROFILE ---
-elif st.session_state.active_tab == "PLAYER PROFILE":
+        # Quarterfinals
+        if b_gender == "Women":
+            qf_ids = ["QF 1", "QF 4", "QF 5", "QF 7"]
+        else:
+            qf_ids = ["QF 2", "QF 3", "QF 6", "QF 8"]
+            
+        # Get QF Data
+        for qf_id in qf_ids:
+            row = find_match(qf_id)
+            bracket_data["Quarterfinals"].append(format_node(row))
+            
+        # Get SF Data
+        sf_matches = df_sch_bracket[df_sch_bracket['Match ID'].str.contains("SF", case=False, na=False)]
+        
+        if len(sf_matches) >= 2:
+             for _, row in sf_matches.iterrows():
+                 bracket_data["Semifinals"].append(format_node(row))
+        else:
+             bracket_data["Semifinals"] = [format_node(None), format_node(None)]
+             
+        # Get Final Data
+        # Explicitly exclude LKO Final to verify it captures the main final
+        # If no main final exists, it returns None -> TBD
+        final_match = find_match("Final", exclude="LKO")
+        bracket_data["Finals"].append(format_node(final_match))
+        
+        # --- LKO BRACKET DATA ---
+        lko_final = find_match("LKO Final")
+        bracket_data_lko = [format_node(lko_final)] if lko_final is not None else []
+
+        # --- RENDER BRACKET (CSS GRID) ---
+        st.markdown("""
+        <style>
+        .bracket-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px 0;
+            overflow-x: auto;
+        }
+        .round {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            gap: 20px;
+        }
+        .round-title {
+            text-align: center;
+            font-family: "Space Grotesk", sans-serif;
+            color: var(--tappa-orange);
+            font-weight: 700;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+        .match-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px;
+            width: 180px;
+            position: relative;
+        }
+        .team-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .team-name {
+            font-family: "Outfit", sans-serif;
+            font-weight: 600;
+            color: white;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 130px;
+        }
+        .team-score {
+            font-family: "Outfit", sans-serif;
+            font-weight: 700;
+            color: var(--tappa-orange);
+            font-size: 0.8rem;
+        }
+        .winner {
+            color: #4CAF50 !important;
+        }
+        .match-status {
+            font-size: 0.6rem;
+            color: #888;
+            text-align: center;
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        c_bracket = st.container()
+        with c_bracket:
+             # Using columns for rounds (now 4 columns)
+            c0, c1, c2, c3 = st.columns(4)
+            
+            with c0:
+                 st.markdown('<div class="round-title">Pre-QF</div>', unsafe_allow_html=True)
+                 for m in bracket_data["Pre-Quarterfinals"]:
+                    t1_class = "winner" if m['winner'] == m['t1'] else ""
+                    t2_class = "winner" if m['winner'] == m['t2'] else ""
+                    
+                    st.markdown(f"""
+                    <div class="match-card">
+                        <div class="team-row">
+                            <span class="team-name {t1_class}" title="{m['t1']}">{m['t1']}</span>
+                            <span class="team-score">{m['s1']}</span>
+                        </div>
+                        <div class="team-row">
+                            <span class="team-name {t2_class}" title="{m['t2']}">{m['t2']}</span>
+                            <span class="team-score">{m['s2']}</span>
+                        </div>
+                        <div class="match-status">{m['status']}</div>
+                    </div>
+                    <div style="height: 15px;"></div>
+                    """, unsafe_allow_html=True)
+
+            with c1:
+                st.markdown('<div class="round-title">Quarterfinals</div>', unsafe_allow_html=True)
+                st.markdown('<div style="height: 20px;"></div>', unsafe_allow_html=True)
+                for m in bracket_data["Quarterfinals"]:
+                    t1_class = "winner" if m['winner'] == m['t1'] else ""
+                    t2_class = "winner" if m['winner'] == m['t2'] else ""
+                    
+                    st.markdown(f"""
+                    <div class="match-card">
+                        <div class="team-row">
+                            <span class="team-name {t1_class}" title="{m['t1']}">{m['t1']}</span>
+                            <span class="team-score">{m['s1']}</span>
+                        </div>
+                        <div class="team-row">
+                            <span class="team-name {t2_class}" title="{m['t2']}">{m['t2']}</span>
+                            <span class="team-score">{m['s2']}</span>
+                        </div>
+                        <div class="match-status">{m['status']}</div>
+                    </div>
+                    <div style="height: 40px;"></div>
+                    """, unsafe_allow_html=True)
+            
+            with c2:
+                st.markdown('<div class="round-title">Semifinals</div>', unsafe_allow_html=True)
+                # Spacing for visual alignment
+                st.markdown('<div style="height: 80px;"></div>', unsafe_allow_html=True)
+                for m in bracket_data["Semifinals"]:
+                    t1_class = "winner" if m['winner'] == m['t1'] else ""
+                    t2_class = "winner" if m['winner'] == m['t2'] else ""
+                    
+                    st.markdown(f"""
+                    <div class="match-card">
+                        <div class="team-row">
+                            <span class="team-name {t1_class}" title="{m['t1']}">{m['t1']}</span>
+                            <span class="team-score">{m['s1']}</span>
+                        </div>
+                        <div class="team-row">
+                            <span class="team-name {t2_class}" title="{m['t2']}">{m['t2']}</span>
+                            <span class="team-score">{m['s2']}</span>
+                        </div>
+                        <div class="match-status">{m['status']}</div>
+                    </div>
+                    <div style="height: 120px;"></div>
+                    """, unsafe_allow_html=True)
+            
+            with c3:
+                st.markdown('<div class="round-title">Final</div>', unsafe_allow_html=True)
+                 # Spacing for visual alignment
+                st.markdown('<div style="height: 200px;"></div>', unsafe_allow_html=True)
+                for m in bracket_data["Finals"]:
+                    t1_class = "winner" if m['winner'] == m['t1'] else ""
+                    t2_class = "winner" if m['winner'] == m['t2'] else ""
+                    
+                    st.markdown(f"""
+                    <div class="match-card" style="border: 2px solid var(--tappa-orange);">
+                        <div class="team-row">
+                            <span class="team-name {t1_class}" title="{m['t1']}">{m['t1']}</span>
+                            <span class="team-score">{m['s1']}</span>
+                        </div>
+                        <div class="team-row">
+                            <span class="team-name {t2_class}" title="{m['t2']}">{m['t2']}</span>
+                            <span class="team-score">{m['s2']}</span>
+                        </div>
+                        <div class="match-status">{m['status']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # --- RENDER LKO SECTION ---
+        if bracket_data_lko:
+             st.markdown("<hr style='margin: 40px 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
+             st.markdown("""
+             <h3 style='text-align: center; margin-bottom: 24px; font-family: "Space Grotesk", sans-serif; color: #aaa; font-size: 1.2rem; text-transform: uppercase;'>League Knockout (LKO)</h3>
+             """, unsafe_allow_html=True)
+             
+             c_lko = st.container()
+             with c_lko:
+                 cl1, cl2, cl3 = st.columns([1, 1, 1])
+                 with cl2:
+                      st.markdown('<div class="round-title">LKO Final</div>', unsafe_allow_html=True)
+                      for m in bracket_data_lko:
+                        t1_class = "winner" if m['winner'] == m['t1'] else ""
+                        t2_class = "winner" if m['winner'] == m['t2'] else ""
+                        
+                        st.markdown(f"""
+                        <div class="match-card" style="border: 2px solid #aaa; margin: 0 auto;">
+                            <div class="team-row">
+                                <span class="team-name {t1_class}">{m['t1']}</span>
+                                <span class="team-score">{m['s1']}</span>
+                            </div>
+                            <div class="team-row">
+                                <span class="team-name {t2_class}">{m['t2']}</span>
+                                <span class="team-score">{m['s2']}</span>
+                            </div>
+                            <div class="match-status">{m['status']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+# --- LEADERBOARDS ---
+elif st.session_state.active_tab == "LEADERBOARDS":
     # Get aggregated player data
     df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
     

@@ -30,11 +30,16 @@ def load_data(json_path=None):
             
         # Placeholder for total_games and last_updated
         if isinstance(data, dict):
-            total_games = len(data.get("Matches", [])) if "Matches" in data else len(data.get("matches", []))
-            # Fallback for flat list in dict wrapper
-            if total_games == 0 and "matches" not in data and "Matches" not in data:
-                 total_games = 0 # Structure unknown
+            # Check for wrapped structure first
+            if "Matches" in data:
+                total_games = len(data["Matches"])
+            elif "matches" in data:
+                total_games = len(data["matches"])
+            else:
+                # Assume dict keys are match IDs (production structure)
+                total_games = len(data)
         else:
+            # Plain list structure
             total_games = len(data)
             
         last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
