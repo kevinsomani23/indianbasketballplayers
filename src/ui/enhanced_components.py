@@ -330,7 +330,7 @@ def create_comparison_bar_chart(categories, team1_values, team2_values, team1_na
     return fig
 
 
-def create_leader_board(df, stat_col, title, top_n=10, show_team=True):
+def create_leader_board(df, stat_col, title, top_n=10, show_team=True, show_date=True):
     """Create visual leader board with ultra-compact professional design"""
     
     if df.empty or stat_col not in df.columns:
@@ -397,9 +397,8 @@ def create_leader_board(df, stat_col, title, top_n=10, show_team=True):
 <div style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 800; color: var(--tappa-orange); line-height: 1;">
 {display_stat}
 </div>
-<div style="background: rgba(255,255,255,0.05); height: 3px; border-radius: 1.5px; overflow: hidden; width: 30px; margin-top: 4px;">
-<div style="background: var(--tappa-orange); height: 100%; width: {progress_pct}%; border-radius: 1.5px;"></div>
-</div>
+{f'<div style="font-size: 0.6rem; color: #888; margin-top: 2px; text-align: right;">vs {row.get("Opponent", "???")}</div>' if "Opponent" in row else ""}
+{f'<div style="font-size: 0.6rem; color: #666; text-align: right;">{str(row.get("Date", "")).split(" ")[0]}</div>' if show_date and "Date" in row else ""}
 </div>
 </div>
 </div>"""

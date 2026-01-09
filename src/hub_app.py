@@ -33,9 +33,13 @@ import altair as alt
 import plotly.graph_objects as go
 import numpy as np
 try:
+    import re
+    import importlib
     import src.analytics as ant
-    import src.ui.enhanced_components as ec
     import src.ui.social_generator as sg
+    import src.data_manager as dm
+    from src.metrics_engine import MetricsEngine
+    import src.ui.enhanced_components as ec
     from datetime import datetime
 except ImportError as e:
     st.error(f"Failed to import modules: {e}")
@@ -45,49 +49,7 @@ except ImportError as e:
 if 'ec' in locals():
     ec.inject_custom_css()
 
-@st.cache_data
-def load_data_v11():
-    """Load the main JSON data. Trust data.json as source of truth."""
-    try:
-        # data/processed/data.json
-        with open("data/processed/data.json", "r", encoding='utf-8-sig') as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return []
-
-@st.cache_data  
-def load_category_map():
-    """Load category map"""
-    try:
-        with open("data/raw/match_category_map.json", "r", encoding='utf-8-sig') as f:
-            return json.load(f)
-    except:
-        return {}
-
-@st.cache_data
-def load_logos():
-    try:
-        with open("data/logos.json", "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def load_manual_scores():
-    try:
-        with open("data/processed/manual_scores.json", "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def load_schedule():
-    """Load the compiled schedule CSV"""
-    try:
-        df = pd.read_csv("compiled_schedule.csv")
-        return df
-    except:
-        return pd.DataFrame()
+# Data Loading functions moved to src.data_manager
 
 def get_match_obj(row, raw_data_list):
     t1_s = str(row['Team A']).strip().upper()
@@ -219,8 +181,8 @@ def render_match_row(row, m_found, idx, key_prefix="sch"):
         st.markdown(f"<div style='background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 20px; font-weight: bold; color: var(--tappa-orange); text-transform: uppercase; letter-spacing: 0.2rem; filter: drop-shadow(0 0 5px var(--tappa-orange-glow));'>{row['Court']} - {row['Match ID']}</div>", unsafe_allow_html=True)
         return
 
-    logos = load_logos()
-    manual_scores = load_manual_scores()
+    logos = dm.load_logos()
+    manual_scores = dm.load_manual_scores()
     match_id = str(m_found['MatchID']) if m_found else None
     
     # Extract Team Details
@@ -359,7 +321,7 @@ def render_schedule_table(filtered_sch, raw_data_all, key_prefix="sch"):
     with c5: st.markdown("<div class='sch-header'>Result</div>", unsafe_allow_html=True)
     with c6: st.markdown("<div class='sch-header'>Action</div>", unsafe_allow_html=True)
     
-    manual_scores = load_manual_scores()
+    manual_scores = dm.load_manual_scores()
     
     # Data Rows
     for idx, row in filtered_sch.iterrows():
@@ -449,10 +411,7 @@ def render_schedule_table(filtered_sch, raw_data_all, key_prefix="sch"):
                         st.session_state.active_tab = "MATCH DASHBOARD"
                         # Assuming m_found has 'MatchId' or similar from raw_data
                         # raw_data matches usually have 'MatchId' at root or similar? 
-                        # Actually get_match_obj returns the raw dict. 
-                        # Let's hope it has a uniquely identifiable ID. 
-                        # Looking at raw data structure from memory/logs, it's keyed likely.
-                        # Wait, get_match_obj returns an item from raw_data_list which is values of json.
+                        # Actually get_match_obj returns the FULL stats object. 
                         # It should have 'MatchId' or we use the loop key?
                         # Let's assume 'MatchId' exists in the object or use row['Match ID'] mapping if needed.
                         # The existing code used `row['Match ID']` for jump_to_match primarily? 
@@ -490,245 +449,14 @@ def style_rankings(df, title):
 
 
 
-@st.cache_data
-def get_tournament_aggregates_v15(match_list, period="Full Game"):
-    """Aggregate stats across all matches for Players and Teams, with optional Period slicing."""
-    if not match_list: return pd.DataFrame(), pd.DataFrame()
-    
-    # Load category map once
-    cat_map = load_category_map() or {}
-    
-    p_recs = []
-    t_recs = []
-    
-    for m in match_list:
-        mid_raw = str(m.get("MatchID")).strip().replace('\ufeff', '')
-        # Direct lookup for category, FALLBACK to data.json's internal category, then HARDCODED
-        cat = cat_map.get(mid_raw) or m.get("Category", "Unknown")
-        
-        tn = m.get('Teams', {})
-        t1, t2 = tn.get('t1', 'Unknown'), tn.get('t2', 'Unknown')
-        
-        # Determine Source Data
-        if period == "Full Game":
-            # FORCE RE-AGGREGATION: Do not trust m['PlayerStats'] significantly
-            # We will sum all available periods to ensure clean separation
-            # EXCEPT: Some old games might not have PeriodStats?
-            # Safe Fallback: Check if PeriodStats exists
-            # Match-specific accumulation
-            p_stats_merged = {}
-            if m.get('PeriodStats'):
-                for q in m['PeriodStats']:
-                    for p_name, s in m['PeriodStats'][q].items():
-                        if p_name not in p_stats_merged:
-                            # Use copy here, we'll deepcopy later or just ensure we don't mutate original
-                            p_stats_merged[p_name] = s.copy() 
-                        else:
-                            # Sum Counts for duplicates (e.g. same player in multiple quarters)
-                            for k in ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "MIN_DEC"]:
-                                if k in s:
-                                    p_stats_merged[p_name][k] = p_stats_merged[p_name].get(k, 0) + s[k]
-                                    
-            source_stats = p_stats_merged if p_stats_merged else m.get('PlayerStats', {})
-            use_precalc_team = False 
-        else:
-            source_stats = m.get('PeriodStats', {}).get(period, {})
-            use_precalc_team = False
-            
-        # Match-specific accumulation for Team derivation (only if not using precalc)
-        match_p_rows = []
-        
-        # --- PROCESS PLAYERS ---
-        ts_match = m.get('TeamStats', {})
-        for p_name, s in source_stats.items():
-            # Deepish copy to prevent mutation of source raw data (Audit 1.1)
-            r = s.copy() 
-            
-            # Ensure Team is present
-            if 'Team' not in r:
-                r['Team'] = t1 if t1 else 'Unknown' # Safer fallback
-            
-            team_val = r.get('Team', 'Unknown')
-            tk = "t1" if team_val == t1 else "t2"
-            opp_tk = "t2" if tk == "t1" else "t1"
-            
-            # INJECT MATCH CONTEXT: Ensure every player row has the full team context for this match
-            if tk in ts_match and opp_tk in ts_match:
-                # Own Team Stats
-                for k, v in ts_match[tk].items():
-                    if isinstance(v, (int, float)):
-                        r[f"Tm{k}"] = v
-                        if k == "PTS": r["OffPTS"] = v
-                # Opponent Team Stats
-                for k, v in ts_match[opp_tk].items():
-                    if isinstance(v, (int, float)):
-                        r[f"Opp{k}"] = v
-                        if k == "PTS": r["DefPTS"] = v
-            
-            jersey_val = str(r.get('No', '??'))
-            
-            # Unique Key includes Category to prevent Men/Women merging
-            r['P_KEY'] = f"{cat}_{team_val}_{jersey_val}"
-            r['Player_Name'] = p_name
-            r['Category'] = cat
-            r['MatchID'] = mid_raw
-            p_recs.append(r)
-            
-            if not use_precalc_team:
-                match_p_rows.append(r)
-            
-        # --- PROCESS TEAMS ---
-        if use_precalc_team:
-            # Existing Logic for Full Game
-            if 't1' in ts_match and 't2' in ts_match:
-                for tk in ['t1', 't2']:
-                    opp_tk = 't2' if tk == 't1' else 't1'
-                    s = ts_match[tk].copy()
-                    
-                    row = {}
-                    row['Team'] = tn.get(tk, 'Unknown')
-                    row['Category'] = cat
-                    row['T_KEY'] = f"{cat}_{row['Team']}"
-                    row['MatchID'] = mid_raw
-                    
-                    # Map Self Stats
-                    for k, v in s.items():
-                        if isinstance(v, (int, float)):
-                            row[k] = v
-                            row[f"Tm{k}"] = v
-                            if k == "PTS": row["OffPTS"] = v
-                    
-                    # Map Opponent Stats
-                    for k, v in ts_match[opp_tk].items():
-                        if isinstance(v, (int, float)):
-                            row[f"Opp{k}"] = v
-                            if k == "PTS": row["OppPTS"] = v
-                            
-                    t_recs.append(row)
-        else:
-            # Quarter Logic: Derive Team Stats from Player Stats
-            # Group by Team
-            df_m = pd.DataFrame(match_p_rows)
-            if not df_m.empty:
-                # Sum numeric cols
-                num_cols = df_m.select_dtypes(include=np.number).columns
-                # Group by Team
-                g = df_m.groupby('Team')[num_cols].sum()
-                
-                # We expect 2 teams usually, t1 and t2
-                for team_name in [t1, t2]:
-                    if team_name in g.index:
-                        s = g.loc[team_name].to_dict() # Series to dict
-                        
-                        # Opponent Stats
-                        opp_name = t2 if team_name == t1 else t1
-                        if opp_name in g.index:
-                            s_opp = g.loc[opp_name].to_dict()
-                        else:
-                            s_opp = {} # Should not happen if data complete
-                        
-                        row = {}
-                        row['Team'] = team_name
-                        row['Category'] = cat
-                        row['T_KEY'] = f"{cat}_{team_name}"
-                        row['MatchID'] = mid_raw
-                        
-                        # Map Self
-                        for k, v in s.items():
-                            row[k] = v
-                            row[f"Tm{k}"] = v
-                            
-                        # Map Opp (Manual mapping)
-                        for k, v in s_opp.items():
-                            row[f"Opp{k}"] = v
-                            
-                        t_recs.append(row)
-
-    # --- AGGREGATION PLAYERS ---
-    if p_recs:
-        df_p = pd.DataFrame(p_recs)
-        numeric_targets = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "2PM", "2PA", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "FD", "BLKR", "2CP", "MIN_CALC", "MIN_DEC"]
-        for c in numeric_targets:
-            if c in df_p.columns: df_p[c] = pd.to_numeric(df_p[c], errors='coerce').fillna(0.0)
-        
-        if "MIN_DEC" in df_p.columns: df_p["MIN_CALC"] = df_p["MIN_DEC"]
-            
-        df_p = ant.normalize_stats(df_p)
-        
-        # Filter for Games Played (Only count if minutes > 0)
-        # For Quarters, MIN_CALC might be small or 0 if < 1 min? No, usually float.
-        # Strict > 0 check
-        df_p_active = df_p[df_p["MIN_CALC"] > 0].copy()
-        
-        meta = df_p.groupby('P_KEY').agg({
-            'Player_Name': 'first',
-            'Team': 'first',
-            'No': 'first',
-            'Category': 'first'
-        })
-        meta.columns = ['Player_Raw', 'Team', 'No', 'Category']
-        meta['Player'] = meta['Player_Raw'] + " (" + meta['Team'] + ")"
-        
-        gp = df_p_active.groupby('P_KEY')['MatchID'].nunique()
-        gp.name = "GP"
-        
-        numeric_cols = df_p.select_dtypes(include=np.number).columns
-        df_p_agg = df_p.groupby('P_KEY')[numeric_cols].sum()
-        
-        df_final_p = pd.concat([df_p_agg, meta, gp], axis=1).reset_index()
-        df_final_p["GP"] = df_final_p["GP"].fillna(0)
-    else:
-        df_final_p = pd.DataFrame()
-        
-    # --- AGGREGATION TEAMS ---
-    if t_recs:
-        df_t = pd.DataFrame(t_recs)
-        prefix_cols = [c for c in df_t.columns if c.startswith("Tm") or c.startswith("Opp")]
-        # Ensure we catch all
-        numeric_targets_t = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "2PM", "2PA", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "FD", "BLKR", "2CP", "MIN_CALC"]
-        for c in numeric_targets_t + prefix_cols:
-            if c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce').fillna(0.0)
-
-        df_t = ant.normalize_stats(df_t)
-        
-        meta_t = df_t.groupby('T_KEY').agg({
-            'Team': 'first',
-            'Category': 'first'
-        })
-        
-        gp_t = df_t.groupby('T_KEY')['MatchID'].nunique()
-        gp_t.name = "GP"
-        
-        numeric_cols_t = df_t.select_dtypes(include=np.number).columns
-        df_t_agg = df_t.groupby('T_KEY')[numeric_cols_t].sum()
-        df_final_t = pd.concat([df_t_agg, meta_t, gp_t], axis=1).reset_index()
-        
-        # Quarter Logic: 10 mins per quarter usually?
-        # But MIN_CALC is sum of player mins (200 min / game).
-        # Team Minutes? usually GP * 40 (or 10 for quarter).
-        # We set it artificiall based on period or GP.
-        if period == "Full Game":
-            df_final_t["MIN_CALC"] = df_final_t["GP"] * 40.0
-        else:
-             df_final_t["MIN_CALC"] = df_final_t["GP"] * 10.0
-    else:
-        df_final_t = pd.DataFrame()
-        
-    # --- RECALCULATE ADVANCED STATS ON AGGREGATES ---
-    # This ensures that percentages (FG%, USG%, PIE) are calculated from the TOTALS,
-    # not just summing up the per-game percentages (which is wrong).
-    # It also enforces consistency (e.g. 2PM = FGM - 3PM).
-    df_final_p = ant.calculate_derived_stats(df_final_p)
-    df_final_t = ant.calculate_derived_team_stats(df_final_t)
-
-    return df_final_p, df_final_t
+# Aggregation Logic moved to src.metrics_engine.py
 
 def calculate_power_rankings(raw_data_list):
     # 1. Get Unified Standings (Record, PD, etc. for ALL teams)
     # Note: We need schedule_df and manual_scores here.
     # Ideally, we should pass them in, but for backward compatibility, load them here if needed.
-    df_sch = load_schedule()
-    manual_scores = load_manual_scores()
+    df_sch = dm.load_schedule()
+    manual_scores = dm.load_manual_scores()
     unified_standings = calculate_unified_standings(df_sch, manual_scores, raw_data_list)
     df_unified = pd.DataFrame(unified_standings)
     
@@ -736,7 +464,8 @@ def calculate_power_rankings(raw_data_list):
         return pd.DataFrame()
 
     # 2. Get Advanced Stats for teams that have them
-    df_adv, _ = get_tournament_aggregates_v15(raw_data_list, "Full Game")
+    # We want Team Stats here (NetRtg, etc)
+    _, df_adv = MetricsEngine.get_tournament_stats(raw_data_list, "Full Game", entity_type="Teams")
     
     # 3. Merge
     # We want a master list of all teams.
@@ -810,8 +539,18 @@ def calculate_power_rankings(raw_data_list):
     return df_rank
 
 
-
-raw_data = load_data_v11()
+# Load Data
+try:
+    raw_data_dict, total_games, last_updated = dm.load_data()
+    # Check if dict or list
+    if isinstance(raw_data_dict, list):
+        raw_data = raw_data_dict
+    else:
+        raw_data = raw_data_dict.get("Matches", [])
+except NameError:
+    # Fallback if v12 unavailable (should not happen)
+    st.error("Data loader v12 not found. Please restart app.")
+    raw_data = []
 
 if not raw_data:
     st.error("Data.json not found. Please run tournament_engine.py first.")
@@ -819,7 +558,9 @@ if not raw_data:
 
 
 # --- HEADER & CATEGORY FILTERING ---
-cat_map = load_category_map()
+# Load Maps
+cat_map = dm.load_category_map()
+logos = dm.load_logos()
 
 # Inject Category into raw_data
 if raw_data and cat_map:
@@ -1030,10 +771,16 @@ if 'active_tab' not in st.session_state:
 NAV_GROUPS = {
     "DASHBOARD": ["HOME"],
     "TOURNAMENT HUB": ["SCHEDULE", "STANDINGS"],
-    "ANALYSIS": ["MATCH DASHBOARD", "COMPARISON"],
+    "GAME CENTRE": ["MATCH DASHBOARD"],
     "LEADERBOARDS": ["TOP PERFORMANCES", "TOURNAMENT STATS"],
-    "PLAYER HUB": ["PLAYER PROFILE"]
+    "PLAYER HUB": ["PLAYER PROFILE", "COMPARISON"]
 }
+
+# --- VALIDATE STATE ---
+# If navigation structure changed, reset state to avoid KeyError
+if st.session_state.active_main_nav not in NAV_GROUPS:
+    st.session_state.active_main_nav = "DASHBOARD"
+    st.session_state.active_tab = "HOME"
 
 # Custom CSS for Navigation
 st.markdown("""
@@ -1119,7 +866,7 @@ Tournament Overview
     # Calculate Data
 
     rankings = calculate_power_rankings(raw_data)
-    df_p, _ = get_tournament_aggregates_v15(raw_data, "Full Game")
+    df_p, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
     
     if not df_p.empty:
         # Separate by Category
@@ -1177,7 +924,7 @@ Tournament Overview
     
     with col_home1:
         st.markdown("<h4 style='font-family: \"Space Grotesk\", sans-serif; color: var(--tappa-orange); text-transform: uppercase;'>Today's Schedule & Results</h4>", unsafe_allow_html=True)
-        df_sch = load_schedule()
+        df_sch = dm.load_schedule()
         if not df_sch.empty:
             # Filter for "Today" based on system date
             try:
@@ -1209,7 +956,7 @@ Tournament Overview
                 today_matches = today_matches[today_matches['Gender'] == cat_filter]
             
             if today_matches.empty:
-                st.write("No matches scheduled for today in this category.")
+                st.info("No matches scheduled for today in this category.")
             else:
                 # Court Wise Navigation
                 courts_available = sorted(today_matches['Court'].unique().tolist())
@@ -1306,9 +1053,9 @@ if st.session_state.active_tab == "STANDINGS":
     </div>""", unsafe_allow_html=True)
     
     # Calculate Unified Standings
-    df_sch = load_schedule()
-    manual_scores = load_manual_scores()
-    standings_data = calculate_unified_standings(df_sch, manual_scores, raw_data_all)
+    df_sch = dm.load_schedule()
+    manual_scores_df = dm.load_manual_scores()
+    standings_data = calculate_unified_standings(df_sch, manual_scores_df, raw_data_all)
     df_standings = pd.DataFrame(standings_data)
     
     if df_standings.empty:
@@ -1383,7 +1130,7 @@ Tournament Schedule
 <div style='height: 4px; width: 60px; background: var(--tappa-orange); margin: 8px auto; border-radius: 2px;'></div>
 </div>""", unsafe_allow_html=True)
 
-    df_schedule = load_schedule()
+    df_schedule = dm.load_schedule()
     
     if df_schedule.empty:
         st.warning("Schedule file not found.")
@@ -1739,7 +1486,7 @@ Match Scoreboard
             period_mode = st.radio("Period", ["Full Game", "1st Half", "2nd Half", "Custom"], horizontal=True, key="box_period")
             
         with cp2:
-            stats_view = st.radio("Stats View", ["Summary", "Scoring", "Playmaking", "Defense", "Advanced"], horizontal=True, key="box_view")
+            stats_view = st.radio("Stats View", ["Summary", "Advanced", "Scoring", "USG"], horizontal=True, key="box_view")
             
         # Contextual Filters
         q_curr = []
@@ -1831,11 +1578,28 @@ Match Scoreboard
                     display_outlier_thresholds[disp_k] = v
 
                 view_map = {
-                    "Summary": ["PTS", "REB", "AST", "STL", "BLK", "TOV", "PF", "+/-", "GmScr"],
-                    "Scoring": ["PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%", "FTM", "FTA", "FT%", "TS%"],
+                    # Standard Stats Tab
+                    "Summary": ["FGM", "FGA", "FG%", "3PM", "3PA", "3P%", "FTM", "FTA", "FT%", 
+                               "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "PTS", "+/-", "GmScr"],
+                    
+                    # Advanced Stats Tab
+                    "Advanced": ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", 
+                                "OREB%", "DREB%", "REB%", "TO RATIO", "eFG%", "TS%", "USG%", "PACE", "PIE"],
+                    
+                    # Scoring Breakdown Tab
+                    "Scoring": ["%FGA 2PT", "%FGA 3PT", "%PTS 2PT", "%PTS 2PT MR", "%PTS 3PT", 
+                               "%PTS FBPS", "%PTS FT", "%PTS OFFTO", "%PTS PITP", 
+                               "2FGM %AST", "2FGM %UAST", "3FGM %AST", "3FGM %UAST", 
+                               "FGM %AST", "FGM %UAST"],
+                    
+                    # USG Tab (team-relative percentages)
+                    "USG": ["USG%", "%FGM", "%FGA", "%3PM", "%3PA", "%FTM", "%FTA", 
+                           "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK", "%BLKA", 
+                           "%PF", "%PFD", "%PTS"],
+                    
+                    # Keep Playmaking and Defense for backward compatibility
                     "Playmaking": ["AST", "TOV", "AST/TO", "AST%", "USG%"],
-                    "Defense": ["DREB", "STL", "BLK", "PF", "DEFRTG"],
-                    "Advanced": ["OFFRTG", "DEFRTG", "NETRTG", "TS%", "eFG%", "USG%", "PIE", "GmScr"]
+                    "Defense": ["DREB", "STL", "BLK", "PF", "DEFRTG"]
                 }
                 
                 target_internal = view_map.get(stats_view, [])
@@ -1871,54 +1635,348 @@ Match Scoreboard
 
 # --- TOP PERFORMANCES ---
 elif st.session_state.active_tab == "TOP PERFORMANCES":
-    # Aggregate all daily stats (acts as flat-map of all games)
-    df_all_perfs = ant.get_daily_stats(raw_data)
+    # UI Controls at top
+    c_date, c_period = st.columns([1.5, 1.5])
+    
+    with c_period:
+        period_sel = st.radio("Time Segment", ["Full Game", "1st Half", "2nd Half", "Q1", "Q2", "Q3", "Q4"], horizontal=True, index=0)
+    
+    # Aggregate all daily stats with period filter
+    df_all_perfs = ant.get_daily_stats(raw_data, period=period_sel)
     
     if df_all_perfs.empty:
-        st.warning("No performance data available yet.")
+        if period_sel != "Full Game":
+            st.info(f"Period-specific stats ({period_sel}) are not available. Please select 'Full Game' or ensure period stats are included in the data.")
+        else:
+            st.warning("No performance data available yet.")
     else:
-        # Date Filter Control at top
+        # Date Filter Control
         dates = sorted(df_all_perfs['Date'].unique(), reverse=True)
-        c_date, c_pad = st.columns([1.5, 3])
         with c_date:
-            sel_date = st.selectbox("Filter by Date (Optional)", ["All Dates"] + dates)
+            sel_date = st.selectbox("Filter by Date (Optional)", ["Whole Tournament"] + dates)
         
-        # Apply date filter
-        if sel_date != "All Dates":
+        # Apply date filter and determine if we should show dates in cards
+        if sel_date != "Whole Tournament":
             df_view = df_all_perfs[df_all_perfs['Date'] == sel_date].copy()
             view_label = f"Performances on {sel_date}"
+            show_date_in_cards = False  # Hide date when specific date is selected
         else:
             df_view = df_all_perfs.copy()
-            view_label = "Tournament Records"
+            view_label = "Tournament High"  # Changed from "Tournament Records"
+            show_date_in_cards = True  # Show date for whole tournament view
             
         if df_view.empty:
             st.info(f"No match data found for the selection.")
         else:
-            st.markdown(f"<h4 style='font-family: \"Space Grotesk\", sans-serif; font-size: 1.1rem; margin-bottom: 20px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em;'>{view_label} Highs</h4>", unsafe_allow_html=True)
+            st.markdown(f"<h4 style='font-family: \"Space Grotesk\", sans-serif; font-size: 1.1rem; margin-bottom: 20px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em;'>{view_label}</h4>", unsafe_allow_html=True)
             
-            # Top Highs Grid (2x3)
-            r1_c1, r1_c2, r1_c3 = st.columns(3)
-            with r1_c1:
-                ec.create_leader_board(df_view, "PTS", "Single Game Points", top_n=5)
-            with r1_c2:
-                if "REB" in df_view.columns:
-                    ec.create_leader_board(df_view, "REB", "Single Game Boards", top_n=5)
-            with r1_c3:
-                if "AST" in df_view.columns:
-                    ec.create_leader_board(df_view, "AST", "Single Game Assists", top_n=5)
-            
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-            
-            r2_c1, r2_c2, r2_c3 = st.columns(3)
-            with r2_c1:
-                if "STL" in df_view.columns:
-                    ec.create_leader_board(df_view, "STL", "Single Game Steals", top_n=5)
-            with r2_c2:
-                if "BLK" in df_view.columns:
-                    ec.create_leader_board(df_view, "BLK", "Single Game Blocks", top_n=5)
-            with r2_c3:
-                if "GmScr" in df_view.columns:
-                    ec.create_leader_board(df_view, "GmScr", "Impact (GmScr)", top_n=5)
+            # --- TABS FOR DIFFERENT VIEWS ---
+            tab_lead, tab_std, tab_adv, tab_usg, tab_scoring = st.tabs(["LEADERBOARDS", "STANDARD STATS", "ADVANCED STATS", "USG", "SCORING"])
+
+            # TAB 1: LEADERBOARDS (Grid)
+            with tab_lead:
+                # Top Highs Grid (2x3)
+                r1_c1, r1_c2, r1_c3 = st.columns(3)
+                with r1_c1:
+                    ec.create_leader_board(df_view, "PTS", "Single Game Points", top_n=5, show_date=show_date_in_cards)
+                with r1_c2:
+                    if "REB" in df_view.columns:
+                        ec.create_leader_board(df_view, "REB", "Single Game Boards", top_n=5, show_date=show_date_in_cards)
+                with r1_c3:
+                    if "AST" in df_view.columns:
+                        ec.create_leader_board(df_view, "AST", "Single Game Assists", top_n=5, show_date=show_date_in_cards)
+                
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                
+                r2_c1, r2_c2, r2_c3 = st.columns(3)
+                with r2_c1:
+                    if "STL" in df_view.columns:
+                        ec.create_leader_board(df_view, "STL", "Single Game Steals", top_n=5, show_date=show_date_in_cards)
+                with r2_c2:
+                    if "BLK" in df_view.columns:
+                        ec.create_leader_board(df_view, "BLK", "Single Game Blocks", top_n=5, show_date=show_date_in_cards)
+                with r2_c3:
+                    if "GmScr" in df_view.columns:
+                        ec.create_leader_board(df_view, "GmScr", "Impact (GmScr)", top_n=5, show_date=show_date_in_cards)
+
+            # TAB 2: STANDARD STATS (Table)
+            with tab_std:
+                std_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%", 
+                           "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-"]
+                # Filter to available columns
+                available_cols = [c for c in std_cols if c in df_view.columns]
+                
+                # Sort by PTS by default
+                if "PTS" in df_view.columns:
+                    df_std = df_view[available_cols].sort_values(by="PTS", ascending=False).head(100).reset_index(drop=True).copy()
+                else:
+                    df_std = df_view[available_cols].head(100).reset_index(drop=True).copy()
+                
+                # Rename MIN_CALC to Min for display BEFORE adding Rank
+                if "MIN_CALC" in df_std.columns:
+                    df_std = df_std.rename(columns={"MIN_CALC": "Min"})
+                
+                # Add Rank column
+                df_std.insert(0, "Rank", range(1, len(df_std) + 1))
+                
+                # Round percentage columns to 1 decimal place
+                pct_cols = ["FG%", "3P%", "FT%"]
+                for col in pct_cols:
+                    if col in df_std.columns:
+                        df_std[col] = df_std[col].round(1)
+                
+                # Apply styling to highlight max values
+                def highlight_max(s):
+                    """Highlight the maximum in a Series."""
+                    if s.name in ["PTS", "REB", "AST", "STL", "BLK", "FGM", "3PM", "FTM"]:
+                        is_max = s == s.max()
+                        return ['background-color: rgba(255, 133, 51, 0.3); font-weight: bold' if v else '' for v in is_max]
+                    return ['' for _ in s]
+                
+                # Create format dict for percentage columns
+                format_dict = {}
+                for col in pct_cols:
+                    if col in df_std.columns:
+                        format_dict[col] = "{:.1f}"
+                
+                styled_df = df_std.style.apply(highlight_max).format(format_dict, na_rep="-")
+                
+                # Display dataframe without selection
+                st.dataframe(
+                    styled_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=600
+                )
+
+            # TAB 3: ADVANCED STATS (Table)
+            with tab_adv:
+                adv_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", 
+                           "AST RATIO", "OREB%", "DREB%", "REB%", "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss"]
+                # Filter to available columns
+                available_cols = [c for c in adv_cols if c in df_view.columns]
+                
+                # Sort by PIE by default
+                if "PIE" in df_view.columns:
+                    df_adv = df_view[available_cols].sort_values(by="PIE", ascending=False).head(100).reset_index(drop=True).copy()
+                else:
+                    df_adv = df_view[available_cols].head(100).reset_index(drop=True).copy()
+                
+                # Rename MIN_CALC to MIN for display BEFORE adding Rank
+                if "MIN_CALC" in df_adv.columns:
+                    df_adv = df_adv.rename(columns={"MIN_CALC": "MIN"})
+                
+                # Add Rank column
+                df_adv.insert(0, "Rank", range(1, len(df_adv) + 1))
+                
+                # Round numeric columns to 1 decimal place
+                numeric_cols = ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", "OREB%", "DREB%", "REB%", 
+                               "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss"]
+                for col in numeric_cols:
+                    if col in df_adv.columns:
+                        df_adv[col] = df_adv[col].round(1)
+                
+                # Apply styling to highlight max values
+                def highlight_max(s):
+                    """Highlight the maximum in a Series."""
+                    if s.name in ["PIE", "OFFRTG", "NETRTG", "TS%", "eFG%"]:
+                        is_max = s == s.max()
+                        return ['background-color: rgba(255, 133, 51, 0.3); font-weight: bold' if v else '' for v in is_max]
+                    return ['' for _ in s]
+                
+                # Create format dict for numeric columns
+                format_dict = {}
+                for col in numeric_cols:
+                    if col in df_adv.columns:
+                        format_dict[col] = "{:.1f}"
+                
+                styled_df = df_adv.style.apply(highlight_max).format(format_dict, na_rep="-")
+                
+                # Display dataframe without selection
+                st.dataframe(
+                    styled_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=600
+                )
+
+            # TAB 4: USG (Table)
+            with tab_usg:
+                # Calculate usage percentages
+                df_usg = df_view.copy()
+                
+                # Calculate team-relative percentages
+                if "Team" in df_usg.columns and "MatchID" in df_usg.columns and not df_usg.empty:
+                    try:
+                        # Define columns we want to aggregate - Added MIN_DEC for USG calc
+                        agg_cols = ["FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB",
+                                   "REB", "AST", "TOV", "STL", "BLK", "PF", "FD", "PTS", "MIN_DEC", "Mins"]
+                        
+                        # Only aggregate columns that actually exist in the full dataset
+                        available_agg_cols = {col: "sum" for col in agg_cols if col in df_all_perfs.columns}
+                        
+                        if not available_agg_cols:
+                            st.warning("No stat columns available for usage calculations.")
+                        else:
+                            # Standardize MatchID and Team to string to ensure correct grouping and merging
+                            df_all_perfs["MatchID"] = df_all_perfs["MatchID"].astype(str)
+                            df_all_perfs["Team"] = df_all_perfs["Team"].astype(str)
+                            df_usg["MatchID"] = df_usg["MatchID"].astype(str)
+                            df_usg["Team"] = df_usg["Team"].astype(str)
+
+                            # Calculate team totals per game using MatchID and Team from the FULL DATASET
+                            team_game_totals = df_all_perfs.groupby(["MatchID", "Team"]).agg(available_agg_cols).reset_index()
+                            
+                            # Rename to Tm prefix
+                            rename_dict = {col: f"Tm{col}" for col in available_agg_cols.keys()}
+                            team_game_totals = team_game_totals.rename(columns=rename_dict)
+                            
+                            # Drop any existing Tm columns from df_usg to avoid _x/_y suffixes
+                            cols_to_drop = [col for col in df_usg.columns if col.startswith('Tm') and col in team_game_totals.columns]
+                            if cols_to_drop:
+                                df_usg = df_usg.drop(columns=cols_to_drop)
+                            
+                            # Merge team totals back using MatchID and Team
+                            df_usg = df_usg.merge(team_game_totals, on=["MatchID", "Team"], how="left")
+                            
+                            # --- CALCULATE USG% ---
+                            # Formula: 100 * ((FGA + 0.44*FTA + TOV) * (TmMIN / 5)) / (MIN * (TmFGA + 0.44*TmFTA + TmTOV))
+                            # Ensure required columns exist
+                            req_usg = ["FGA", "FTA", "TOV", "MIN_DEC", "TmFGA", "TmFTA", "TmTOV", "TmMIN_DEC"]
+                            if all(c in df_usg.columns for c in req_usg):
+                                try:
+                                    # Player Possessions (Numerator Part 1)
+                                    p_poss = df_usg["FGA"] + 0.44 * df_usg["FTA"] + df_usg["TOV"]
+                                    # Team Possessions (Denominator Part 2)
+                                    tm_poss = df_usg["TmFGA"] + 0.44 * df_usg["TmFTA"] + df_usg["TmTOV"]
+                                    
+                                    # Team Minutes (Sum of all players)
+                                    tm_min = df_usg["TmMIN_DEC"]
+                                    # Player Minutes - Avoid zero division
+                                    p_min = df_usg["MIN_DEC"].replace(0, 1) 
+                                    
+                                    # Usage Rate Formula
+                                    numerator = p_poss * (tm_min / 5)
+                                    denominator = p_min * tm_poss
+                                    
+                                    # Handle bad denominators
+                                    usg_raw = (numerator / denominator.replace(0, 1) * 100).fillna(0)
+                                    
+                                    # Filter out garbage time (less than 5 mins played)
+                                    df_usg["USG%"] = usg_raw.where(df_usg["MIN_DEC"] >= 5, 0.0).round(1)
+                                except Exception as e:
+                                    st.warning(f"Could not calc USG%: {e}")
+                            
+                            # Calculate percentages only for columns that exist
+                            if "FGM" in df_usg.columns and "TmFGM" in df_usg.columns:
+                                df_usg["%FGM"] = (df_usg["FGM"] / df_usg["TmFGM"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "FGA" in df_usg.columns and "TmFGA" in df_usg.columns:
+                                df_usg["%FGA"] = (df_usg["FGA"] / df_usg["TmFGA"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "3PM" in df_usg.columns and "Tm3PM" in df_usg.columns:
+                                df_usg["%3PM"] = (df_usg["3PM"] / df_usg["Tm3PM"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "3PA" in df_usg.columns and "Tm3PA" in df_usg.columns:
+                                df_usg["%3PA"] = (df_usg["3PA"] / df_usg["Tm3PA"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "FTM" in df_usg.columns and "TmFTM" in df_usg.columns:
+                                df_usg["%FTM"] = (df_usg["FTM"] / df_usg["TmFTM"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "FTA" in df_usg.columns and "TmFTA" in df_usg.columns:
+                                df_usg["%FTA"] = (df_usg["FTA"] / df_usg["TmFTA"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "OREB" in df_usg.columns and "TmOREB" in df_usg.columns:
+                                df_usg["%OREB"] = (df_usg["OREB"] / df_usg["TmOREB"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "DREB" in df_usg.columns and "TmDREB" in df_usg.columns:
+                                df_usg["%DREB"] = (df_usg["DREB"] / df_usg["TmDREB"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "REB" in df_usg.columns and "TmREB" in df_usg.columns:
+                                df_usg["%REB"] = (df_usg["REB"] / df_usg["TmREB"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "AST" in df_usg.columns and "TmAST" in df_usg.columns:
+                                df_usg["%AST"] = (df_usg["AST"] / df_usg["TmAST"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "TOV" in df_usg.columns and "TmTOV" in df_usg.columns:
+                                df_usg["%TOV"] = (df_usg["TOV"] / df_usg["TmTOV"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "STL" in df_usg.columns and "TmSTL" in df_usg.columns:
+                                df_usg["%STL"] = (df_usg["STL"] / df_usg["TmSTL"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "BLK" in df_usg.columns and "TmBLK" in df_usg.columns:
+                                df_usg["%BLK"] = (df_usg["BLK"] / df_usg["TmBLK"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "PF" in df_usg.columns and "TmPF" in df_usg.columns:
+                                df_usg["%PF"] = (df_usg["PF"] / df_usg["TmPF"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "FD" in df_usg.columns and "TmFD" in df_usg.columns:
+                                df_usg["%PFD"] = (df_usg["FD"] / df_usg["TmFD"].replace(0, 1) * 100).fillna(0).round(1)
+                            if "PTS" in df_usg.columns and "TmPTS" in df_usg.columns:
+                                df_usg["%PTS"] = (df_usg["PTS"] / df_usg["TmPTS"].replace(0, 1) * 100).fillna(0).round(1)
+                            
+                            # Select columns for display
+                            usg_cols = ["Player", "Team", "Opponent", "Date", "USG%", "%FGM", "%FGA", "%3PM", "%3PA", 
+                                       "%FTM", "%FTA", "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK", "%PF", "%PFD", "%PTS"]
+                            available_cols = [c for c in usg_cols if c in df_usg.columns]
+                            
+                            # Sort by USG%
+                            if "USG%" in df_usg.columns:
+                                df_usg_display = df_usg.sort_values(by="USG%", ascending=False).reset_index(drop=True)
+                            else:
+                                df_usg_display = df_usg.reset_index(drop=True)
+                            
+                            # Add Rank
+                            df_usg_display.insert(0, "Rank", range(1, len(df_usg_display) + 1))
+                            display_cols = ["Rank"] + available_cols
+                            
+                            st.dataframe(df_usg_display[display_cols], use_container_width=True, hide_index=True, height=600)
+                    except Exception as e:
+                        st.error(f"Error calculating usage percentages: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+                else:
+                    missing = []
+                    if "Team" not in df_usg.columns:
+                        missing.append("Team")
+                    if "MatchID" not in df_usg.columns:
+                        missing.append("MatchID")
+                    st.info(f"Required columns missing: {missing if missing else 'None'}. Available columns: {list(df_usg.columns[:15])}")
+
+            # TAB 5: SCORING (Table)
+            with tab_scoring:
+                # Calculate scoring distribution
+                df_scoring = df_view.copy()
+                
+                if "PTS" in df_scoring.columns and "FGA" in df_scoring.columns:
+                    # Calculate 2PT stats
+                    df_scoring["2PM"] = df_scoring.get("2PM", df_scoring["FGM"] - df_scoring["3PM"])
+                    df_scoring["2PA"] = df_scoring.get("2PA", df_scoring["FGA"] - df_scoring["3PA"])
+                    
+                    # Points from each source
+                    df_scoring["PTS_2PT"] = df_scoring["2PM"] * 2
+                    df_scoring["PTS_3PT"] = df_scoring["3PM"] * 3
+                    df_scoring["PTS_FT"] = df_scoring["FTM"]
+                    
+                    # Percentage of FGA
+                    df_scoring["%FGA_2PT"] = (df_scoring["2PA"] / df_scoring["FGA"] * 100).fillna(0).round(1)
+                    df_scoring["%FGA_3PT"] = (df_scoring["3PA"] / df_scoring["FGA"] * 100).fillna(0).round(1)
+                    
+                    # Percentage of PTS
+                    df_scoring["%PTS_2PT"] = (df_scoring["PTS_2PT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    df_scoring["%PTS_3PT"] = (df_scoring["PTS_3PT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    df_scoring["%PTS_FT"] = (df_scoring["PTS_FT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    
+                    # Assisted vs Unassisted (if available)
+                    if "2FGM_AST" in df_scoring.columns:
+                        df_scoring["2FGM_%AST"] = (df_scoring["2FGM_AST"] / df_scoring["2PM"] * 100).fillna(0).round(1)
+                        df_scoring["2FGM_%UAST"] = (100 - df_scoring["2FGM_%AST"]).round(1)
+                    
+                    if "3FGM_AST" in df_scoring.columns:
+                        df_scoring["3FGM_%AST"] = (df_scoring["3FGM_AST"] / df_scoring["3PM"] * 100).fillna(0).round(1)
+                        df_scoring["3FGM_%UAST"] = (100 - df_scoring["3FGM_%AST"]).round(1)
+                    
+                    # Select columns
+                    scoring_cols = ["Player", "Team", "Opponent", "Date", "%FGA_2PT", "%FGA_3PT", 
+                                   "%PTS_2PT", "%PTS_3PT", "%PTS_FT", "PTS_2PT", "PTS_3PT", "PTS_FT"]
+                    available_cols = [c for c in scoring_cols if c in df_scoring.columns]
+                    
+                    # Sort by PTS
+                    df_scoring_display = df_scoring.sort_values(by="PTS", ascending=False).head(100).reset_index(drop=True)
+                    
+                    # Add Rank
+                    df_scoring_display.insert(0, "Rank", range(1, len(df_scoring_display) + 1))
+                    display_cols = ["Rank"] + available_cols
+                    
+                    st.dataframe(df_scoring_display[display_cols], use_container_width=True, hide_index=True, height=600)
+                else:
+                    st.info("Scoring data not available.")
 
 
 # --- TOURNAMENT STATS ---
@@ -1928,7 +1986,7 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
     
     with c_sel:
         entity_type = st.radio("Entity", ["Players", "Teams"], horizontal=True)
-        period_sel = st.radio("Time Segment", ["Full Game", "Q1", "Q2", "Q3", "Q4"], horizontal=True, index=0)
+        period_sel = st.radio("Time Segment", ["Full Game", "Q1", "Q2", "Q3", "Q4", "1st Half", "2nd Half"], horizontal=True, index=0)
         
     with c_mode:
         opts = ["Totals", "Per Game"]
@@ -1937,7 +1995,9 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
         stat_mode = st.radio("Stats Mode", opts, horizontal=True)
 
     # --- AGGREGATION ---
-    df_p_all, df_t_all = get_tournament_aggregates_v15(raw_data, period=period_sel)
+    # --- AGGREGATION ---
+    df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data, period=period_sel, entity_type="Players")
+    _, df_t_all = MetricsEngine.get_tournament_stats(raw_data, period=period_sel, entity_type="Teams")
     
     if df_p_all.empty:
         st.warning("No matched processed yet.")
@@ -1952,8 +2012,15 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
             # df_view['Player'] = df_view['Team'] # REMOVED: analytics engine improved
             
         # --- MODE LOGIC ---
-        # Identify columns to scale (All numeric except Metadata)
+        # Identify columns to scale (All numeric except Metadata and RATE STATS)
         exclude_cols = ["No", "GP", "MatchID", "Team"]
+        
+        # Rate stats that should NOT be divided (they're already rates/percentages)
+        rate_stats = ["USG%", "AST%", "FG%", "2P%", "3P%", "FT%", "eFG%", "TS%", 
+                     "OFFRTG", "DEFRTG", "NETRTG", "PIE", "OREB%", "DREB%", "REB%",
+                     "TO RATIO", "AST RATIO", "AST/TO"]
+        
+        exclude_cols.extend(rate_stats)
         numeric_cols = [c for c in df_view.select_dtypes(include=np.number).columns if c not in exclude_cols]
         
         df_display = df_view.copy()
@@ -1961,7 +2028,7 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
         if stat_mode == "Per Game":
             for c in numeric_cols:
                 # Ensure we don't divide if column missing (select_dtypes handles this but good to specific)
-                df_display[c] = df_display[c] / df_display['GP']
+                df_display[c] = (df_display[c] / df_display['GP']).round(1)
                     
         elif stat_mode == "Per 36 Min":
             # Avoiding divide by zero
@@ -1971,8 +2038,12 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
             
             for c in numeric_cols:
                 if c != "MIN_CALC": # Don't divide MIN_CALC yet
-                    df_display[c] = df_display[c] / factor
+                    df_display[c] = (df_display[c] / factor).round(1)
             df_display['MIN_CALC'] = 36.0 # Set explicit
+            
+        # Preserve USG% from MetricsEngine (it's already correctly calculated)
+        # Recalculating after per-game division breaks the formula because _TmMin becomes per-game
+        usg_preserved = df_display['USG%'].copy() if 'USG%' in df_display.columns else None
             
         # Recalculate Derived (Correct % and Ratings)
         # Recalculate Derived (Correct % and Ratings)
@@ -1981,13 +2052,17 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
         else:
             df_display = ant.calculate_derived_team_stats(df_display)
         
+        # Restore preserved USG% (don't use the recalculated one)
+        if usg_preserved is not None:
+            df_display['USG%'] = usg_preserved
+        
         # Default Sort: Points or PPG
         if not df_display.empty:
             sort_col = "PTS" if "PTS" in df_display.columns else df_display.columns[0]
             df_display = df_display.sort_values(by=sort_col, ascending=False)
         
         # --- DISPLAY ---
-        ts_leaders, ts1, ts2 = st.tabs(["Leaders", "Standard Stats", "Advanced Stats"])
+        ts_leaders, ts1, ts2, ts_usg, ts_scoring = st.tabs(["Leaders", "Standard Stats", "Advanced Stats", "USG", "SCORING"])
         
         # Prepare display data
         is_pg = (stat_mode in ["Per Game", "Per 36 Min"])
@@ -2025,17 +2100,269 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
                 st.info("Leader boards available for Players view only")
         
         with ts1:
-            out = ant.prepare_display_data(df_display, "Standard", entity_type=entity_type[:-1], per_game=is_pg)
-            st.markdown(ec.render_html_table(out), unsafe_allow_html=True)
+            # Use same detailed columns as Top Performance
+            std_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "3P%", 
+                       "FTM", "FTA", "FT%", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "DD2", "TD3", "+/-"]
+            
+            # Filter to available columns
+            available_cols = [c for c in std_cols if c in df_display.columns]
+            
+            # Sort by PTS by default
+            if "PTS" in df_display.columns:
+                df_std = df_display[available_cols].sort_values(by="PTS", ascending=False).head(100).reset_index(drop=True).copy()
+            else:
+                df_std = df_display[available_cols].head(100).reset_index(drop=True).copy()
+            
+            # Rename MIN_CALC to Min for display BEFORE adding Rank
+            if "MIN_CALC" in df_std.columns:
+                df_std = df_std.rename(columns={"MIN_CALC": "Min"})
+            
+            # Add Rank column
+            df_std.insert(0, "Rank", range(1, len(df_std) + 1))
+            
+            # Round all numeric columns appropriately
+            # Percentages: 1 decimal
+            pct_cols = ["FG%", "3P%", "FT%"]
+            for col in pct_cols:
+                if col in df_std.columns:
+                    df_std[col] = df_std[col].round(1)
+            
+            # Counting stats: integers for totals, 1 decimal for per-game
+            if stat_mode in ["Per Game", "Per 36 Min"]:
+                count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "+/-", "Min"]
+                for col in count_cols:
+                    if col in df_std.columns:
+                        df_std[col] = df_std[col].round(1)
+            else:
+                count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "PF", "+/-"]
+                for col in count_cols:
+                    if col in df_std.columns:
+                        df_std[col] = df_std[col].round(0).astype(int)
+            
+            # Apply styling to highlight max values
+            def highlight_max(s):
+                """Highlight the maximum in a Series."""
+                if s.name in ["PTS", "REB", "AST", "STL", "BLK", "FGM", "3PM", "FTM"]:
+                    is_max = s == s.max()
+                    return ['background-color: rgba(255, 133, 51, 0.3); font-weight: bold' if v else '' for v in is_max]
+                return ['' for _ in s]
+            
+            # Create format dict for percentage columns
+            format_dict = {}
+            for col in pct_cols:
+                if col in df_std.columns:
+                    format_dict[col] = "{:.1f}"
+            
+            # Add format for counting stats based on mode
+            if stat_mode in ["Per Game", "Per 36 Min"]:
+                # Per-game: 1 decimal for all counting stats
+                for col in count_cols:
+                    if col in df_std.columns:
+                        format_dict[col] = "{:.1f}"
+            else:
+                # Totals: integers for counting stats
+                for col in count_cols:
+                    if col in df_std.columns and col != "+/-":  # +/- can be negative, keep as int
+                        format_dict[col] = "{:.0f}"
+            
+            styled_df = df_std.style.apply(highlight_max).format(format_dict, na_rep="-")
+            
+            # Display dataframe without selection
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                hide_index=True,
+                height=600
+            )
             
         with ts2:
-            out_adv = ant.prepare_display_data(df_display, "Advanced", entity_type=entity_type[:-1], per_game=is_pg)
-            st.markdown(ec.render_html_table(out_adv), unsafe_allow_html=True)
+            # Use same detailed columns as Top Performance
+            adv_cols = ["Player", "Team", "Opponent", "Date", "MIN_CALC", "OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", 
+                       "AST RATIO", "OREB%", "DREB%", "REB%", "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss"]
+            
+            # Filter to available columns
+            available_cols = [c for c in adv_cols if c in df_display.columns]
+            
+            # Sort by PIE by default
+            if "PIE" in df_display.columns:
+                df_adv = df_display[available_cols].sort_values(by="PIE", ascending=False).head(100).reset_index(drop=True).copy()
+            else:
+                df_adv = df_display[available_cols].head(100).reset_index(drop=True).copy()
+            
+            # Rename MIN_CALC to MIN for display BEFORE adding Rank
+            if "MIN_CALC" in df_adv.columns:
+                df_adv = df_adv.rename(columns={"MIN_CALC": "MIN"})
+            
+            # Add Rank column
+            df_adv.insert(0, "Rank", range(1, len(df_adv) + 1))
+            
+            # Round all advanced stats to 1 decimal place
+            numeric_cols = ["OFFRTG", "DEFRTG", "NETRTG", "AST%", "AST/TO", "AST RATIO", "OREB%", "DREB%", "REB%", 
+                           "TO RATIO", "eFG%", "TS%", "USG%", "PIE", "PPoss", "MIN"]
+            for col in numeric_cols:
+                if col in df_adv.columns:
+                    df_adv[col] = df_adv[col].round(1)
+            
+            # Apply styling to highlight max values
+            def highlight_max(s):
+                """Highlight the maximum in a Series."""
+                if s.name in ["PIE", "OFFRTG", "NETRTG", "TS%", "eFG%"]:
+                    is_max = s == s.max()
+                    return ['background-color: rgba(255, 133, 51, 0.3); font-weight: bold' if v else '' for v in is_max]
+                return ['' for _ in s]
+            
+            # Create format dict for numeric columns
+            format_dict = {}
+            for col in numeric_cols:
+                if col in df_adv.columns:
+                    format_dict[col] = "{:.1f}"
+            
+            styled_df = df_adv.style.apply(highlight_max).format(format_dict, na_rep="-")
+            
+            # Display dataframe without selection
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                hide_index=True,
+                height=600
+            )
+        
+        # TAB 4: USG (Table)
+        with ts_usg:
+            # USG% should always use totals, not per-game or per-36 stats
+            # Use the original aggregated data before scaling
+            df_usg_base = df_p_all.copy() if entity_type == "Players" else df_t_all.copy()
+            
+            # Calculate usage percentages
+            df_usg = df_usg_base.copy()
+            
+            # For tournament stats, we need to aggregate team totals across all games
+            if entity_type == "Players" and not df_usg_base.empty:
+                try:
+                    # Use Centralized Metrics Engine
+                    df_usg, _ = MetricsEngine.get_tournament_stats(raw_data, period=period_sel, entity_type="Players")
+                    
+                    if not df_usg.empty:
+                         # Filter to > 0 GP just in case
+                         df_usg = df_usg[df_usg["GP"] > 0].copy()
+                         
+                         # Calculate percentages relative to TEAM TOTALS
+                         # We need to make sure we have the team totals column for each player
+                         # Fortunately, MetricsEngine.get_tournament_stats returns df with TmFGM, TmFGA, etc. if we ask it to?
+                         # Actually, let's check what columns are in df_usg from debug_risha.py
+                         # It showed TmFGM, TmFGA, etc. ARE present!
+                         
+                         # Define percent columns to calculate
+                         pct_map = {
+                             "FGM": "TmFGM", "FGA": "TmFGA", 
+                             "3PM": "Tm3PM", "3PA": "Tm3PA",
+                             "FTM": "TmFTM", "FTA": "TmFTA",
+                             "OREB": "TmOREB", "DREB": "TmDREB", "REB": "TmREB",
+                             "AST": "TmAST", "TOV": "TmTOV", "STL": "TmSTL", 
+                             "BLK": "TmBLK", "PF": "TmPF", "FD": "TmFD", "PTS": "TmPTS"
+                         }
+                         
+                         for stat, tm_stat in pct_map.items():
+                             if stat in df_usg.columns and tm_stat in df_usg.columns:
+                                 pct_col = f"%{stat}" if stat != "FD" else "%PFD"
+                                 # Calculate percentage: Player Stat / Team Stat
+                                 # Replace 0 denominator with 1 to avoid NaN/Inf
+                                 df_usg[pct_col] = (df_usg[stat] / df_usg[tm_stat].replace(0, 1) * 100).fillna(0).round(1)
+                                 
+                         # Handle BLKA if available
+                         if "BLKA" in df_usg.columns and "TmBLKA" in df_usg.columns:
+                             df_usg["%BLKA"] = (df_usg["BLKA"] / df_usg["TmBLKA"].replace(0, 1) * 100).fillna(0).round(1)
+                         elif "BLKA" in df_usg.columns:
+                              # If TmBLKA missing, assume sum of checks
+                              pass
+                         
+                         # Select display columns (including new ones)
+                         usg_cols = ["Player", "Team", "GP", "USG%", "%FGM", "%FGA", "%3PM", "%3PA", 
+                                    "%FTM", "%FTA", "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", 
+                                    "%BLK", "%PF", "%PFD", "%PTS"]
+                                    
+                         display_cols = [c for c in usg_cols if c in df_usg.columns]
+                         
+                         # Sort by USG% descending
+                         if "USG%" in df_usg.columns:
+                             df_usg = df_usg.sort_values("USG%", ascending=False)
+                         
+                         # Add Rank
+                         df_usg.insert(0, "Rank", range(1, len(df_usg) + 1))
+                         display_cols_final = ["Rank"] + display_cols
+                         
+                         st.dataframe(df_usg[display_cols_final], use_container_width=True, hide_index=True)
+                except Exception as e:
+                    st.error(f"Error calculating USG metrics: {e}")
+            else:
+                st.info("No player data available for USG metrics.")
+        
+        # TAB 5: SCORING (Table)
+        with ts_scoring:
+            # Scoring percentages should always use totals, not per-game or per-36 stats
+            # Use the original aggregated data before scaling
+            df_scoring_base = df_p_all.copy() if entity_type == "Players" else df_t_all.copy()
+            
+            if entity_type == "Players" and not df_scoring_base.empty:
+                # Calculate scoring distribution
+                df_scoring = df_scoring_base.copy()
+                
+                if "PTS" in df_scoring.columns and "FGA" in df_scoring.columns:
+                    # Calculate 2PT stats
+                    df_scoring["2PM"] = df_scoring.get("2PM", df_scoring["FGM"] - df_scoring["3PM"])
+                    df_scoring["2PA"] = df_scoring.get("2PA", df_scoring["FGA"] - df_scoring["3PA"])
+                    
+                    # Points from each source
+                    df_scoring["PTS_2PT"] = df_scoring["2PM"] * 2
+                    df_scoring["PTS_3PT"] = df_scoring["3PM"] * 3
+                    df_scoring["PTS_FT"] = df_scoring["FTM"]
+                    
+                    # Percentage of FGA
+                    df_scoring["%FGA_2PT"] = (df_scoring["2PA"] / df_scoring["FGA"] * 100).fillna(0).round(1)
+                    df_scoring["%FGA_3PT"] = (df_scoring["3PA"] / df_scoring["FGA"] * 100).fillna(0).round(1)
+                    
+                    # Percentage of PTS
+                    df_scoring["%PTS_2PT"] = (df_scoring["PTS_2PT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    df_scoring["%PTS_3PT"] = (df_scoring["PTS_3PT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    df_scoring["%PTS_FT"] = (df_scoring["PTS_FT"] / df_scoring["PTS"] * 100).fillna(0).round(1)
+                    
+                    # Select columns
+                    scoring_cols = ["Player", "Team", "%FGA_2PT", "%FGA_3PT", 
+                                   "%PTS_2PT", "%PTS_3PT", "%PTS_FT", "PTS_2PT", "PTS_3PT", "PTS_FT"]
+                    available_cols = [c for c in scoring_cols if c in df_scoring.columns]
+                    
+                    # Sort by PTS
+                    df_scoring_display = df_scoring.sort_values(by="PTS", ascending=False).head(100).reset_index(drop=True)
+                    
+                    # Round all percentage columns to 1 decimal
+                    pct_cols_scoring = [c for c in df_scoring_display.columns if c.startswith('%')]
+                    for col in pct_cols_scoring:
+                        if col in df_scoring_display.columns:
+                            df_scoring_display[col] = df_scoring_display[col].round(1)
+                    
+                    # Round point totals to integers
+                    pts_cols = ["PTS_2PT", "PTS_3PT", "PTS_FT"]
+                    for col in pts_cols:
+                        if col in df_scoring_display.columns:
+                            df_scoring_display[col] = df_scoring_display[col].round(0).astype(int)
+                    
+                    # Add Rank
+                    df_scoring_display.insert(0, "Rank", range(1, len(df_scoring_display) + 1))
+                    display_cols = ["Rank"] + available_cols
+                    
+                    st.dataframe(df_scoring_display[display_cols], use_container_width=True, hide_index=True, height=600)
+                else:
+                    st.info("Scoring data not available.")
+            else:
+                st.info("Scoring stats available for Players view only")
+
+
+
 
 # --- PLAYER PROFILE ---
 elif st.session_state.active_tab == "PLAYER PROFILE":
     # Get aggregated player data
-    df_p_all, _ = get_tournament_aggregates_v15(raw_data, period="Full Game")
+    df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
     
     if df_p_all.empty:
         st.warning("No player data available.")
@@ -2351,7 +2678,7 @@ elif st.session_state.active_tab == "COMPARISON":
     st.header("Player Comparison")
     
     # Get aggregated player data
-    df_p_all_comp, _ = get_tournament_aggregates_v15(raw_data, period="Full Game")
+    df_p_all_comp, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
     
     if df_p_all_comp.empty:
         st.warning("No player data available.")

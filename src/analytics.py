@@ -118,15 +118,57 @@ def calculate_derived_stats(df):
     df["Eff"] = (df["PTS"] + df["REB"] + df["AST"] + df["STL"] + df["BLK"]) - (missed_fg + missed_ft + df["TOV"])
     
     # 3. Advanced Context (Possessions)
-    df["TmPoss"] = df["TmFGA"] + 0.44 * df["TmFTA"] - df["TmOREB"] + df["TmTOV"]
-    df["OppPoss"] = df["OppFGA"] + 0.44 * df["OppFTA"] - df["OppOREB"] + df["OppTOV"]
+    # Only calculate TmPoss/OppPoss if they don't exist or are all zeros
+    # For tournament stats, these are summed from game-level values and should be preserved
+    if "TmPoss" not in df.columns or (df["TmPoss"] == 0).all():
+        df["TmPoss"] = df["TmFGA"] + 0.44 * df["TmFTA"] - df["TmOREB"] + df["TmTOV"]
+    
+    if "OppPoss" not in df.columns or (df["OppPoss"] == 0).all():
+        df["OppPoss"] = df["OppFGA"] + 0.44 * df["OppFTA"] - df["OppOREB"] + df["OppTOV"]
+    
     df["PPoss"] = df["FGA"] + 0.44 * df["FTA"] + df["TOV"]
     df["TSA"] = df["FGA"] + 0.44 * df["FTA"]
     
     # 4. Advanced Metrics
     # USG% = 100 * ((FGA + 0.44 * FTA + TOV) * (TmMin / 5)) / (Min * (TmFGA + 0.44 * TmFTA + TmTOV))
-    gp = df["GP"] if "GP" in df.columns else 1.0
-    tm_min = gp * 200 # Typical full game team minutes (5 players * 40)
+    # _TmMin should be the total team minutes across all games/periods
+    # For tournament stats: GP × minutes_per_period
+    # Need to infer period type from the data since we don't have explicit period info here
+    
+    if "GP" in df.columns and "MIN_CALC" in df.columns:
+        # Infer period type from average minutes per game
+        avg_min_per_game = df["MIN_CALC"] / df["GP"]
+        
+        # Determine minutes per period based on average player minutes
+        # The avg_min_per_game represents minutes per PERIOD (not per full game)
+        # Full game: ~10-40 min per game per player (median ~15-20)
+        # Half: ~5-20 min per half per player (median ~7-10)
+        # Quarter: ~2-10 min per quarter per player (median ~3-5)
+        
+        # Use median to avoid outliers (bench players with low minutes)
+        median_mpg = avg_min_per_game.median()
+        
+        if median_mpg > 12:
+            # Likely full game stats (median player plays 12+ min per game)
+            minutes_per_period = 200  # 5 players × 40 min
+        elif median_mpg > 4:
+            # Likely half stats (median player plays 4-12 min per half)
+            minutes_per_period = 100  # 5 players × 20 min
+        else:
+            # Likely quarter stats (median player plays <4 min per quarter)
+            minutes_per_period = 50   # 5 players × 10 min
+        
+        df["_TmMin"] = df["GP"] * minutes_per_period
+    elif "Team" in df.columns and not df.empty:
+        # Fallback: try to infer from player minutes
+        # This is less accurate but better than nothing
+        team_mins = df.groupby("Team")["MIN_CALC"].transform("sum")
+        df["_TmMin"] = team_mins
+    else:
+        # Last resort fallback
+        df["_TmMin"] = 200
+    
+    tm_min = df["_TmMin"]
     p_poss = df["FGA"] + 0.44 * df["FTA"] + df["TOV"]
     
     # Safe denominators
@@ -134,16 +176,25 @@ def calculate_derived_stats(df):
     safe_tm_poss = df["TmPoss"].clip(lower=1.0)
     safe_opp_poss = df["OppPoss"].clip(lower=1.0)
     
-    # USG% protection
+    # USG% calculation
+    # For tournament stats, use TmFGA/TmFTA/TmTOV instead of TmPoss
+    # TmPoss is a context value (possessions while player on court), not total team possessions
+    tm_poss_for_usg = df["TmFGA"] + 0.44 * df["TmFTA"] + df["TmTOV"]
+    safe_tm_poss_usg = tm_poss_for_usg.clip(lower=1.0)
+    
     usg_num = p_poss * (tm_min / 5)
-    usg_den = safe_min * safe_tm_poss
+    usg_den = safe_min * safe_tm_poss_usg
     df["USG%"] = (100 * usg_num / usg_den).replace([np.inf, -np.inf], 0.0).fillna(0.0)
     df["USG%"] = df["USG%"].clip(0, 100.0)
     
     # AST% = 100 * AST / (((Min / (TmMin / 5)) * TmFGM) - FGM)
     # Standard AST% can be noisy. We'll floor the denominator at 1.0.
+    # For period stats, this can be unreliable, so we add extra safety
     ast_den = ((safe_min / (tm_min / 5)) * df["TmFGM"]) - df["FGM"]
-    df["AST%"] = (100 * df["AST"] / ast_den.clip(lower=1.0)).replace([np.inf, -np.inf], 0.0).fillna(0.0)
+    # Only calculate AST% if denominator is reasonable (at least 2 FGM by teammates)
+    df["AST%"] = 0.0
+    valid_ast = ast_den >= 2.0
+    df.loc[valid_ast, "AST%"] = (100 * df.loc[valid_ast, "AST"] / ast_den[valid_ast]).replace([np.inf, -np.inf], 0.0).fillna(0.0)
     df["AST%"] = df["AST%"].clip(0, 100.0)
     
     df["OFFRTG"] = (df["OffPTS"] / safe_tm_poss * 100).replace([np.inf, -np.inf], 0.0).fillna(0.0).clip(upper=300.0)
@@ -249,9 +300,17 @@ def calculate_derived_team_stats(df):
     denom_reb = df["REB"] + df["OppDREB"] + df["OppOREB"]
     df["REB%"] = (df["REB"] / denom_reb * 100).fillna(0.0)
     
-    # USG% -> Simply 100% for a team, or implied pace relative to league?
-    # We will set it to 100 or leave blank to avoid confusion.
-    df["USG%"] = 100.0
+    # USG% -> Calculate if Lineup Team Stats are available
+    if "TmFGA" in df.columns:
+        tm_poss = df["TmFGA"] + 0.44 * df["TmFTA"] + df["TmTOV"] # Simplified
+        df["USG%"] = (df["Poss"] / tm_poss.replace(0, 1) * 100).fillna(0.0)
+    else:
+        # Default to 0 or leave existing? Leave existing if not 100.
+        # But for Teams, it might differ. Keeping it safe:
+        # If no TmFGA, maybe it IS a team row?
+        # But get_daily_stats works on players. 
+        # Leaving it generic:
+        pass
     
     # AST/TO
     df["AST/TO"] = (df["AST"] / df["TOV"]).replace([np.inf, -np.inf], 0.0).fillna(0.0)
@@ -285,7 +344,10 @@ def format_mins(val):
     """Format float minutes to MM:SS"""
     try:
         mins = int(val)
-        secs = int((val - mins) * 60)
+        secs = int(round((val - mins) * 60))
+        if secs == 60:
+            mins += 1
+            secs = 0
         return f"{mins:02d}:{secs:02d}"
     except:
         return "00:00"
@@ -440,7 +502,7 @@ def generate_match_narrative(match_data):
     except Exception as e:
         return ""
 
-def get_daily_stats(match_list):
+def get_daily_stats(match_list, period="Full Game"):
     """Flat-map all player performances from a list of matches with date context."""
     if not match_list: return pd.DataFrame()
     
@@ -450,15 +512,55 @@ def get_daily_stats(match_list):
         date = meta.get("MatchDate", "Unknown")
         cat = m.get("Category", "Unknown")
         teams = m.get("Teams", {})
+        match_id = m.get("MatchID", "Unknown")
         
-        for p_name, s in m.get("PlayerStats", {}).items():
-            # Only include players who actually played
-            if s.get("MIN_DEC", 0) > 0 or s.get("PTS", 0) > 0:
+        # Determine which stats to use based on period
+        if period == "Full Game":
+            stats_dict = m.get("PlayerStats", {})
+        elif period in ["Q1", "Q2", "Q3", "Q4"]:
+            # Get period-specific stats (Q1, Q2, Q3, Q4)
+            # PeriodStats structure: { "Q1": { "Player Name": {stats}, ... }, "Q2": {...}, ... }
+            period_stats = m.get("PeriodStats", {})
+            stats_dict = period_stats.get(period, {})
+        elif period == "1st Half":
+            # Combine Q1 + Q2
+            period_stats = m.get("PeriodStats", {})
+            q1_stats = period_stats.get("Q1", {})
+            q2_stats = period_stats.get("Q2", {})
+            stats_dict = combine_period_stats([q1_stats, q2_stats])
+        elif period == "2nd Half":
+            # Combine Q3 + Q4
+            period_stats = m.get("PeriodStats", {})
+            q3_stats = period_stats.get("Q3", {})
+            q4_stats = period_stats.get("Q4", {})
+            stats_dict = combine_period_stats([q3_stats, q4_stats])
+        else:
+            stats_dict = {}
+        
+        for p_name, s in stats_dict.items():
+            # Check if player has any recorded stats (PTS, REB, AST, etc.)
+            # This ensures we include players who played but have 0 minutes recorded (common in partial data)
+            has_stats = False
+            check_cols = ["PTS", "REB", "AST", "STL", "BLK", "TOV", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "MIN_DEC", "MIN_CALC", "Mins"]
+            
+            for k in check_cols:
+                val = s.get(k, 0)
+                try:
+                    # Handle numbers and strings
+                    if val and float(val) > 0:
+                        has_stats = True
+                        break
+                except (ValueError, TypeError):
+                    continue
+            
+            # DEBUG: KEEP ALL PLAYERS
+            if True:
                 row = s.copy()
                 row["Date"] = date
                 row["Category"] = cat
                 row["Match"] = f"{teams.get('t1')} vs {teams.get('t2')}"
                 row["Opponent"] = teams.get("t2") if s.get("Team") == teams.get("t1") else teams.get("t1")
+                row["MatchID"] = match_id
                 records.append(row)
                 
     if not records: return pd.DataFrame()
@@ -467,3 +569,25 @@ def get_daily_stats(match_list):
     df = normalize_stats(df)
     df = calculate_derived_stats(df)
     return df
+
+def combine_period_stats(period_list):
+    """Combine stats from multiple periods (e.g., Q1+Q2 for 1st Half)."""
+    combined = {}
+    
+    for period_stats in period_list:
+        for player_name, stats in period_stats.items():
+            if player_name not in combined:
+                combined[player_name] = stats.copy()
+            else:
+                # Sum up counting stats
+                for key, value in stats.items():
+                    if key in ["Team", "No", "Jersey"]:
+                        # Keep non-numeric fields from first occurrence
+                        continue
+                    elif isinstance(value, (int, float)):
+                        # Skip Rate Stats / Percentages - they should be recalculated
+                        if key.endswith("%") or key in ["OFFRTG", "DEFRTG", "NETRTG", "USG%", "AST%", "OREB%", "DREB%", "REB%", "TS%", "eFG%", "Eff", "GmScr", "PIE", "AST/TO"]:
+                            continue
+                        combined[player_name][key] = combined[player_name].get(key, 0) + value
+    
+    return combined
