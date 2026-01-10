@@ -71,9 +71,9 @@ class MetricsEngine:
                 df_merged["USG%_Daily"] = np.where(poss_term > 0, 100 * usage_term / poss_term, 0.0)
                 df_merged["USG%_Daily"] = df_merged["USG%_Daily"].clip(0, 100.0)
 
-            # Identity Key
+            # Identity Key (Player + Team only, jersey number can vary across games)
             if "P_KEY" not in df_merged.columns:
-                 df_merged["P_KEY"] = df_merged["Player"].astype(str) + "_" + df_merged["Team"].astype(str) + "_" + df_merged["No"].astype(str)
+                 df_merged["P_KEY"] = df_merged["Player"].astype(str) + "_" + df_merged["Team"].astype(str)
 
             # Aggregation Dictionary
             final_agg_dict = {col: "sum" for col in agg_cols if col in df_daily.columns}
