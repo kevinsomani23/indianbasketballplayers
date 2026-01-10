@@ -1724,12 +1724,12 @@ Match Scoreboard
                     "Scoring": ["%FGA 2PT", "%FGA 3PT", "%PTS 2PT", "%PTS 2PT MR", "%PTS 3PT", 
                                "%PTS FBPS", "%PTS FT", "%PTS OFFTO", "%PTS PITP", 
                                "2FGM %AST", "2FGM %UAST", "3FGM %AST", "3FGM %UAST", 
-                               "FGM %AST", "FGM %UAST"],
+                               "FGM %AST", "FGM %UAST", "GmScr"],
                     
                     # USG Tab (team-relative percentages)
                     "USG": ["USG%", "%FGM", "%FGA", "%3PM", "%3PA", "%FTM", "%FTA", 
                            "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK", "%BLKA", 
-                           "%PF", "%PFD", "%PTS"],
+                           "%PF", "%PFD", "%PTS", "GmScr"],
                     
                     # Keep Playmaking and Defense for backward compatibility
                     "Playmaking": ["AST", "TOV", "AST/TO", "AST%", "USG%"],
@@ -2627,19 +2627,29 @@ elif st.session_state.active_tab == "BRACKET":
             t1 = m_row['Team A']
             t2 = m_row['Team B']
             
-            # Check for score
-            m_key = f"{t1.upper()}_VS_{t2.upper()}_{m_row['Gender'].upper()}"
-            m_score = manual_scores_bracket.get(m_key)
+            # Check for score in Score column first (format: "54-88")
+            score_str = m_row.get('Score', '')
+            if score_str and score_str != '' and '-' in str(score_str):
+                try:
+                    parts = str(score_str).split('-')
+                    s1, s2 = parts[0].strip(), parts[1].strip()
+                except:
+                    s1, s2 = "-", "-"
+            else:
+                # Fallback to manual_scores dict
+                m_key = f"{t1.upper()}_VS_{t2.upper()}_{m_row['Gender'].upper()}"
+                m_score = manual_scores_bracket.get(m_key)
+                
+                if not m_score:
+                     # Try reverse key
+                     m_key_rev = f"{t2.upper()}_VS_{t1.upper()}_{m_row['Gender'].upper()}"
+                     m_score_rev = manual_scores_bracket.get(m_key_rev)
+                     if m_score_rev:
+                         m_score = {"s1": m_score_rev["s2"], "s2": m_score_rev["s1"]}
+                
+                s1 = m_score['s1'] if m_score else "-"
+                s2 = m_score['s2'] if m_score else "-"
             
-            if not m_score:
-                 # Try reverse key
-                 m_key_rev = f"{t2.upper()}_VS_{t1.upper()}_{m_row['Gender'].upper()}"
-                 m_score_rev = manual_scores_bracket.get(m_key_rev)
-                 if m_score_rev:
-                     m_score = {"s1": m_score_rev["s2"], "s2": m_score_rev["s1"]}
-            
-            s1 = m_score['s1'] if m_score else "-"
-            s2 = m_score['s2'] if m_score else "-"
             
             winner = None
             if s1 != "-" and s2 != "-":
