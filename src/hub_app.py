@@ -1770,13 +1770,55 @@ Match Scoreboard
 # --- TOP PERFORMANCES ---
 elif st.session_state.active_tab == "TOP PERFORMANCES":
     # UI Controls at top
-    c_date, c_period = st.columns([1.5, 1.5])
+    c_stage, c_date, c_period = st.columns([1, 1.5, 1.5])
+    
+    with c_stage:
+        stage_filter = st.selectbox("Stage", ["All Games", "Group Stage", "Knockouts"], index=0, key="top_perf_stage")
     
     with c_period:
         period_sel = st.radio("Time Segment", ["Full Game", "1st Half", "2nd Half", "Q1", "Q2", "Q3", "Q4"], horizontal=True, index=0)
     
+    # Apply stage filter to raw_data before aggregating
+    if stage_filter != "All Games":
+        knockout_stages = ["Quarterfinal", "Semifinal", "Final", "PQF", "QF", "SF"]
+        
+        # Load schedule with Genius Match IDs
+        filtered_matches = []
+        df_sch = dm.load_schedule()
+        
+        # Create lookup dict: Genius Match ID -> Group/Stage
+        if not df_sch.empty and 'Genius Match ID' in df_sch.columns:
+            # Filter out empty Genius IDs and create lookup
+            stage_lookup = df_sch[df_sch['Genius Match ID'].notna() & (df_sch['Genius Match ID'] != '')].set_index('Genius Match ID')['Group'].to_dict()
+            
+            for match in raw_data:
+                # Convert match ID to float to match the lookup dict keys
+                try:
+                    match_id = float(match.get("MatchID", 0))
+                except (ValueError, TypeError):
+                    match_id = None
+                
+                # Lookup stage using Genius Match ID
+                if match_id and match_id in stage_lookup:
+                    stage = stage_lookup[match_id]
+                    
+                    if stage_filter == "Knockouts":
+                        if stage in knockout_stages:
+                            filtered_matches.append(match)
+                    else:  # Group Stage
+                        if stage not in knockout_stages and stage not in ["LKO Final"]:
+                            filtered_matches.append(match)
+                else:
+                    # If not found in schedule, default to Group Stage
+                    if stage_filter == "Group Stage":
+                        filtered_matches.append(match)
+        
+        raw_data_filtered = filtered_matches if filtered_matches else raw_data
+    else:
+        raw_data_filtered = raw_data
+    
     # Aggregate all daily stats with period filter
-    df_all_perfs = ant.get_daily_stats(raw_data, period=period_sel)
+    df_all_perfs = ant.get_daily_stats(raw_data_filtered, period=period_sel)
     
     if df_all_perfs.empty:
         if period_sel != "Full Game":
@@ -2117,12 +2159,56 @@ elif st.session_state.active_tab == "TOP PERFORMANCES":
 
 # --- TOURNAMENT STATS ---
 elif st.session_state.active_tab == "TOURNAMENT STATS":
-    # --- UI CONTROLS (Moved up) ---
-    c_sel, c_mode = st.columns([1.5, 2])
+    # UI Header with Stats Mode and Period Controls
+    st.markdown("<h3 style='font-family: \"Space Grotesk\", sans-serif; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;'>Tournament Statistics</h3>", unsafe_allow_html=True)
+    
+    c_stage, c_mode, c_sel = st.columns([1, 1, 2])
+    
+    with c_stage:
+        stage_filter = st.selectbox("Stage", ["All Games", "Group Stage", "Knockouts"], index=0, key="tournament_stats_stage")
     
     with c_sel:
         entity_type = st.radio("Entity", ["Players", "Teams"], horizontal=True)
         period_sel = st.radio("Time Segment", ["Full Game", "Q1", "Q2", "Q3", "Q4", "1st Half", "2nd Half"], horizontal=True, index=0)
+    
+    # Apply stage filter to raw_data
+    if stage_filter != "All Games":
+        knockout_stages = ["Quarterfinal", "Semifinal", "Final", "PQF", "QF", "SF"]
+        
+        # Load schedule with Genius Match IDs
+        filtered_matches = []
+        df_sch = dm.load_schedule()
+        
+        # Create lookup dict: Genius Match ID -> Group/Stage
+        if not df_sch.empty and 'Genius Match ID' in df_sch.columns:
+            # Filter out empty Genius IDs and create lookup
+            stage_lookup = df_sch[df_sch['Genius Match ID'].notna() & (df_sch['Genius Match ID'] != '')].set_index('Genius Match ID')['Group'].to_dict()
+            
+            for match in raw_data:
+                # Convert match ID to float to match the lookup dict keys
+                try:
+                    match_id = float(match.get("MatchID", 0))
+                except (ValueError, TypeError):
+                    match_id = None
+                
+                # Lookup stage using Genius Match ID
+                if match_id and match_id in stage_lookup:
+                    stage = stage_lookup[match_id]
+                    
+                    if stage_filter == "Knockouts":
+                        if stage in knockout_stages:
+                            filtered_matches.append(match)
+                    else:  # Group Stage
+                        if stage not in knockout_stages and stage not in ["LKO Final"]:
+                            filtered_matches.append(match)
+                else:
+                    # If not found in schedule, default to Group Stage
+                    if stage_filter == "Group Stage":
+                        filtered_matches.append(match)
+        
+        raw_data_filtered = filtered_matches if filtered_matches else raw_data
+    else:
+        raw_data_filtered = raw_data
         
     with c_mode:
         opts = ["Totals", "Per Game"]
@@ -2132,8 +2218,8 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
 
     # --- AGGREGATION ---
     # --- AGGREGATION ---
-    df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data, period=period_sel, entity_type="Players")
-    _, df_t_all = MetricsEngine.get_tournament_stats(raw_data, period=period_sel, entity_type="Teams")
+    df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data_filtered, period=period_sel, entity_type="Players")
+    _, df_t_all = MetricsEngine.get_tournament_stats(raw_data_filtered, period=period_sel, entity_type="Teams")
     
     if df_p_all.empty:
         st.warning("No matched processed yet.")
@@ -3114,6 +3200,220 @@ elif st.session_state.active_tab == "LEADERBOARDS":
     else:
         st.info("No game log available for this player.")
 
+
+
+# --- PLAYER PROFILE ---
+elif st.session_state.active_tab == "PLAYER PROFILE":
+    st.markdown("""
+    <h2 style='text-align: center; margin-bottom: 24px; font-family: "Space Grotesk", sans-serif;'>PLAYER PROFILE</h2>
+    """, unsafe_allow_html=True)
+    
+    # Get all player data
+    df_p_all, _ = MetricsEngine.get_tournament_stats(raw_data, period="Full Game", entity_type="Players")
+    
+    if df_p_all.empty:
+        st.warning("No player data available.")
+        st.stop()
+    
+    # Ensure advanced metrics
+    df_p_all = ant.calculate_derived_stats(df_p_all)
+    df_p_all = df_p_all[df_p_all['GP'] > 0].copy()
+    
+    # Player Selection
+    c_team, c_player = st.columns([1, 2])
+    
+    teams_list = sorted(df_p_all['Team'].unique()) if 'Team' in df_p_all.columns else []
+    
+    with c_team:
+        sel_team = st.selectbox("Filter by Team", ["All Teams"] + teams_list, key="pp_team")
+    
+    with c_player:
+        if sel_team != "All Teams":
+            player_opts = sorted(df_p_all[df_p_all['Team'] == sel_team]['Player'].unique())
+        else:
+            player_opts = sorted(df_p_all['Player'].unique())
+        
+        if not player_opts:
+            st.warning("No players available")
+            st.stop()
+        
+        selected_player = st.selectbox("Select Player", player_opts, key="pp_player")
+    
+    # Get player stats
+    player_data = df_p_all[df_p_all['Player'] == selected_player].iloc[0]
+    player_team = player_data['Team']
+    
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    
+    # === PLAYER HEADER CARD ===
+    ppg = player_data.get('PTS', 0) / player_data.get('GP', 1) if player_data.get('GP', 0) > 0 else 0
+    rpg = player_data.get('REB', 0) / player_data.get('GP', 1) if player_data.get('GP', 0) > 0 else 0
+    apg = player_data.get('AST', 0) / player_data.get('GP', 1) if player_data.get('GP', 0) > 0 else 0
+    fic = player_data.get('FIC', 0) / player_data.get('GP', 1) if player_data.get('GP', 0) > 0 else 0
+    
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, rgba(255, 133, 51, 0.15), rgba(255, 133, 51, 0.05)); 
+         border: 1px solid var(--tappa-orange); border-radius: 12px; padding: 32px; margin-bottom: 24px;'>
+        <div style='display: flex; justify-content: space-between; align-items: center;'>
+            <div>
+                <h1 style='font-family: "Space Grotesk", sans-serif; font-size: 2.5rem; margin: 0; color: #ffffff;'>{selected_player}</h1>
+                <p style='font-family: "Outfit", sans-serif; font-size: 1.2rem; color: var(--tappa-orange); margin: 8px 0 0 0; font-weight: 600;'>{player_team}</p>
+            </div>
+            <div style='text-align: right;'>
+                <p style='font-family: "Outfit", sans-serif; font-size: 0.9rem; color: #aaa; margin: 0;'>Games Played</p>
+                <p style='font-family: "Space Grotesk", sans-serif; font-size: 2rem; color: var(--tappa-orange); margin: 0; font-weight: 700;'>{int(player_data.get('GP', 0))}</p>
+            </div>
+        </div>
+        <div style='display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 24px;'>
+            <div style='text-align: center; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px;'>
+                <p style='font-size: 0.75rem; color: #aaa; margin: 0; text-transform: uppercase; letter-spacing: 0.1em; font-family: "Space Grotesk", sans-serif;'>PPG</p>
+                <p style='font-size: 2rem; color: #ffffff; margin: 8px 0 0 0; font-weight: 700; font-family: "Outfit", sans-serif;'>{ppg:.1f}</p>
+            </div>
+            <div style='text-align: center; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px;'>
+                <p style='font-size: 0.75rem; color: #aaa; margin: 0; text-transform: uppercase; letter-spacing: 0.1em; font-family: "Space Grotesk", sans-serif;'>RPG</p>
+                <p style='font-size: 2rem; color: #ffffff; margin: 8px 0 0 0; font-weight: 700; font-family: "Outfit", sans-serif;'>{rpg:.1f}</p>
+            </div>
+            <div style='text-align: center; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px;'>
+                <p style='font-size: 0.75rem; color: #aaa; margin: 0; text-transform: uppercase; letter-spacing: 0.1em; font-family: "Space Grotesk", sans-serif;'>APG</p>
+                <p style='font-size: 2rem; color: #ffffff; margin: 8px 0 0 0; font-weight: 700; font-family: "Outfit", sans-serif;'>{apg:.1f}</p>
+            </div>
+            <div style='text-align: center; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px;'>
+                <p style='font-size: 0.75rem; color: #aaa; margin: 0; text-transform: uppercase; letter-spacing: 0.1em; font-family: "Space Grotesk", sans-serif;'>FIC</p>
+                <p style='font-size: 2rem; color: var(--tappa-orange); margin: 8px 0 0 0; font-weight: 700; font-family: "Outfit", sans-serif;'>{fic:.1f}</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # === TABS FOR DIFFERENT VIEWS ===
+    tab_overview, tab_games, tab_splits = st.tabs(["📊 Season Stats", "🎯 Game Log", "📈 Splits & Advanced"])
+    
+    # TAB 1: SEASON STATS
+    with tab_overview:
+        st.markdown("<h3 style='font-family: \"Space Grotesk\", sans-serif; margin-top: 20px;'>Season Totals</h3>", unsafe_allow_html=True)
+        
+        # Standard Stats
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Scoring**")
+            scoring_df = pd.DataFrame({
+                'Stat': ['PTS', 'FGM-FGA', 'FG%', '3PM-3PA', '3P%', 'FTM-FTA', 'FT%'],
+                'Total': [
+                    f"{player_data.get('PTS', 0):.0f}",
+                    f"{player_data.get('FGM', 0):.0f}-{player_data.get('FGA', 0):.0f}",
+                    f"{player_data.get('FG%', 0):.1f}%",
+                    f"{player_data.get('3PM', 0):.0f}-{player_data.get('3PA', 0):.0f}",
+                    f"{player_data.get('3P%', 0):.1f}%",
+                    f"{player_data.get('FTM', 0):.0f}-{player_data.get('FTA', 0):.0f}",
+                    f"{player_data.get('FT%', 0):.1f}%"
+                ],
+                'Per Game': [
+                    f"{ppg:.1f}",
+                    f"{player_data.get('FGM', 0) / player_data.get('GP', 1):.1f}-{player_data.get('FGA', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('FG%', 0):.1f}%",
+                    f"{player_data.get('3PM', 0) / player_data.get('GP', 1):.1f}-{player_data.get('3PA', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('3P%', 0):.1f}%",
+                    f"{player_data.get('FTM', 0) / player_data.get('GP', 1):.1f}-{player_data.get('FTA', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('FT%', 0):.1f}%"
+                ]
+            })
+            st.dataframe(scoring_df, use_container_width=True, hide_index=True)
+        
+        with col2:
+            st.markdown("**Other Stats**")
+            other_df = pd.DataFrame({
+                'Stat': ['REB', 'OREB', 'DREB', 'AST', 'STL', 'BLK', 'TOV', 'PF'],
+                'Total': [
+                    f"{player_data.get('REB', 0):.0f}",
+                    f"{player_data.get('OREB', 0):.0f}",
+                    f"{player_data.get('DREB', 0):.0f}",
+                    f"{player_data.get('AST', 0):.0f}",
+                    f"{player_data.get('STL', 0):.0f}",
+                    f"{player_data.get('BLK', 0):.0f}",
+                    f"{player_data.get('TOV', 0):.0f}",
+                    f"{player_data.get('PF', 0):.0f}"
+                ],
+                'Per Game': [
+                    f"{rpg:.1f}",
+                    f"{player_data.get('OREB', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('DREB', 0) / player_data.get('GP', 1):.1f}",
+                    f"{apg:.1f}",
+                    f"{player_data.get('STL', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('BLK', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('TOV', 0) / player_data.get('GP', 1):.1f}",
+                    f"{player_data.get('PF', 0) / player_data.get('GP', 1):.1f}"
+                ]
+            })
+            st.dataframe(other_df, use_container_width=True, hide_index=True)
+    
+    # TAB 2: GAME LOG
+    with tab_games:
+        st.markdown("<h3 style='font-family: \"Space Grotesk\", sans-serif; margin-top: 20px;'>Game-by-Game Performance</h3>", unsafe_allow_html=True)
+        
+        # Get individual game data
+        game_stats = ant.get_daily_stats(raw_data, period="Full Game")
+        
+        if not game_stats.empty:
+            player_games = game_stats[game_stats['Player'] == selected_player].copy()
+            
+            if not player_games.empty:
+                # Sort by date descending
+                player_games = player_games.sort_values('Date', ascending=False)
+                
+                # Select key columns
+                display_cols = ['Date', 'Opponent', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'FGM', 'FGA', 'FG%', '3PM', '3PA', 'FTM', 'FTA', 'FIC']
+                display_cols = [c for c in display_cols if c in player_games.columns]
+                
+                player_games_display = player_games[display_cols].copy()
+                
+                # Format percentages
+                if 'FG%' in player_games_display.columns:
+                    player_games_display['FG%'] = player_games_display['FG%'].apply(lambda x: f"{x:.1f}%")
+                
+                st.dataframe(player_games_display, use_container_width=True, hide_index=True)
+            else:
+                st.info("No game-by-game data available for this player")
+        else:
+            st.info("Game logs not available")
+    
+    # TAB 3: ADVANCED STATS
+    with tab_splits:
+        st.markdown("<h3 style='font-family: \"Space Grotesk\", sans-serif; margin-top: 20px;'>Advanced Metrics</h3>", unsafe_allow_html=True)
+        
+        col_adv1, col_adv2 = st.columns(2)
+        
+        with col_adv1:
+            st.markdown("**Efficiency**")
+            eff_df = pd.DataFrame({
+                'Metric': ['OFFRTG', 'DEFRTG', 'NETRTG', 'TS%', 'eFG%', 'USG%', 'PIE'],
+                'Value': [
+                    f"{player_data.get('OFFRTG', 0):.1f}",
+                    f"{player_data.get('DEFRTG', 0):.1f}",
+                    f"{player_data.get('NETRTG', 0):.1f}",
+                    f"{player_data.get('TS%', 0):.1f}%",
+                    f"{player_data.get('eFG%', 0):.1f}%",
+                    f"{player_data.get('USG%', 0):.1f}%",
+                    f"{player_data.get('PIE', 0):.1f}"
+                ]
+            })
+            st.dataframe(eff_df, use_container_width=True, hide_index=True)
+        
+        with col_adv2:
+            st.markdown("**Playmaking & Rebounding**")
+            play_df = pd.DataFrame({
+                'Metric': ['AST%', 'AST/TO', 'AST RATIO', 'OREB%', 'DREB%', 'REB%', 'TO RATIO'],
+                'Value': [
+                    f"{player_data.get('AST%', 0):.1f}%",
+                    f"{player_data.get('AST/TO', 0):.1f}",
+                    f"{player_data.get('AST RATIO', 0):.1f}",
+                    f"{player_data.get('OREB%', 0):.1f}%",
+                    f"{player_data.get('DREB%', 0):.1f}%",
+                    f"{player_data.get('REB%', 0):.1f}%",
+                    f"{player_data.get('TO RATIO', 0):.1f}"
+                ]
+            })
+            st.dataframe(play_df, use_container_width=True, hide_index=True)
 
 
 # --- PLAYER COMPARISON ---
