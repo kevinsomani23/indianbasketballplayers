@@ -1,6 +1,17 @@
 import pandas as pd
 import numpy as np
 
+def round_half_up(series, decimals=0):
+    """
+    Round numbers standardly (half up away from zero).
+    Python's default round() uses Banker's Rounding (half to even).
+    This function ensures 17.25 -> 17.3, 13.25 -> 13.3, etc.
+    """
+    multiplier = 10 ** decimals
+    # Method: Multiply -> Add 0.5 (away from zero) -> Floor -> Divide
+    # We use np.sign to handle negatives symmetrically (-17.25 -> -17.3)
+    return (np.sign(series) * np.floor(np.abs(series) * multiplier + 0.5) / multiplier)
+
 def apply_stat_rounding(df, mode="totals"):
     """
     Apply consistent rounding to all statistics in a DataFrame.
@@ -26,17 +37,15 @@ def apply_stat_rounding(df, mode="totals"):
                 "%OREB", "%DREB", "%REB", "%AST", "%TOV", "%STL", "%BLK",
                 "%BLKA", "%PF", "%PFD", "%PTS",
                 "%FGA 2PT", "%FGA 3PT", "%PTS 2PT", "%PTS 2PT MR", "%PTS 3PT",
-                "%PTS FBPS", "%PTS FT", "%PTS OFFTO", "%PTS PITP",
+                "%PTS FBPS", "%PTS FT", "%PTS OFFTO",
                 "2FGM %AST", "2FGM %UAST", "3FGM %AST", "3FGM %UAST",
                 "FGM %AST", "FGM %UAST"]
     
     for col in pct_cols:
         if col in df.columns:
-            # Try to convert to numeric first, coercing errors to NaN
-            # This handles cases where data might be strings "50.5" or similar
             if not pd.api.types.is_numeric_dtype(df[col]):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-            df[col] = df[col].round(1)
+            df[col] = round_half_up(df[col], 1)
     
     # Advanced metrics - always 1 decimal
     adv_cols = ["OFFRTG", "DEFRTG", "NETRTG", "PIE", "PACE", "PPoss",
@@ -46,14 +55,13 @@ def apply_stat_rounding(df, mode="totals"):
         if col in df.columns:
             if not pd.api.types.is_numeric_dtype(df[col]):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-            df[col] = df[col].round(1)
+            df[col] = round_half_up(df[col], 1)
     
     # MIN - check if numeric before rounding to avoid breaking "MM:SS" strings
     for col in ["MIN", "Min", "MIN_CALC", "Mins"]:
         if col in df.columns:
             if pd.api.types.is_numeric_dtype(df[col]):
-                df[col] = df[col].round(1)
-            # If it's not numeric (e.g. "35:20"), leave it alone
+                df[col] = round_half_up(df[col], 1)
     
     # Counting stats - depends on mode
     count_cols = ["PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA",
@@ -66,22 +74,21 @@ def apply_stat_rounding(df, mode="totals"):
             if col in df.columns:
                 if not pd.api.types.is_numeric_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
-                df[col] = df[col].round(1)
+                df[col] = round_half_up(df[col], 1)
     else:
         # Totals: integers
         for col in count_cols:
             if col in df.columns:
                 if not pd.api.types.is_numeric_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
-                # Fill NaNs with 0 before int conversion if needed, but safe round(0) keeps NaNs as NaNs
-                # To be safe for display:
-                df[col] = df[col].fillna(0).round(0).astype(int)
+                # Use standard rounding before int conversion
+                df[col] = round_half_up(df[col].fillna(0), 0).astype(int)
     
     # +/- - always 1 decimal (can be negative)
     if "+/-" in df.columns:
         if not pd.api.types.is_numeric_dtype(df["+/-"]):
              df["+/-"] = pd.to_numeric(df["+/-"], errors='coerce')
-        df["+/-"] = df["+/-"].round(1)
+        df["+/-"] = round_half_up(df["+/-"], 1)
     
     return df
 
@@ -327,7 +334,7 @@ def calculate_derived_stats(df):
     
     # Rounding
     pct_cols = ["FG%", "2P%", "3P%", "FT%", "eFG%", "TS%", "USG%", "AST%", "OFFRTG", "DEFRTG", "NETRTG", "PIE", "GmScr", "AST/TO"]
-    df[pct_cols] = df[pct_cols].round(1)
+    df[pct_cols] = round_half_up(df[pct_cols], 1)
     
     return df
 
@@ -420,7 +427,7 @@ def calculate_derived_team_stats(df):
     pct_cols = ["FG%", "2P%", "3P%", "FT%", "eFG%", "TS%", "USG%", "AST%", "OFFRTG", "DEFRTG", "NETRTG", "PIE", "GmScr", "AST/TO", "OREB%", "DREB%", "REB%"]
     # Filter only existing columns
     final_cols = [c for c in pct_cols if c in df.columns]
-    df[final_cols] = df[final_cols].round(1)
+    df[final_cols] = round_half_up(df[final_cols], 1)
     
     return df
 
@@ -467,12 +474,12 @@ def apply_standard_stat_formatting(df, per_game=False):
         # 2. Apply rules
         if target in counting_stats:
             if per_game:
-                df[col] = df[col].astype(float).round(1)
+                df[col] = round_half_up(df[col].astype(float), 1)
             else:
                 # Use round(0) then int to avoid display issues with .0
-                df[col] = df[col].astype(float).round(0).astype(int)
+                df[col] = round_half_up(df[col].astype(float), 0).astype(int)
         elif target in rate_stats:
-            df[col] = df[col].astype(float).round(1)
+            df[col] = round_half_up(df[col].astype(float), 1)
             
     return df
 
