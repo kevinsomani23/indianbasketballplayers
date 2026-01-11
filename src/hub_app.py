@@ -687,7 +687,8 @@ logos = dm.load_logos()
 if raw_data and cat_map:
     for m in raw_data:
         mid = str(m.get("MatchID"))
-        if mid in cat_map:
+        # Only overwrite if value is a valid Category (to avoid "Knockout" issue)
+        if mid in cat_map and cat_map[mid] in ["Men", "Women"]:
             m['Category'] = cat_map[mid]
 
 # Store unfiltered data for player profiles (so game log shows all matches)
@@ -1360,7 +1361,20 @@ if st.session_state.active_tab == "MATCH DASHBOARD":
 
 
     # Match Selector
-    m_options = {f"{m['Teams']['t1']} vs {m['Teams']['t2']} ({m.get('Category', 'Unknown')})": str(m['MatchID']) for m in raw_data}
+    m_options = {}
+    for m in raw_data:
+        t1_label = m['Teams']['t1']
+        t2_label = m['Teams']['t2']
+        mid = str(m['MatchID'])
+        cat_label = m.get('Category', 'Unknown')
+        
+        # Label Grand Finals
+        if mid in ["2800575", "2800571"]:
+            label = f"{t1_label} vs {t2_label} (Finals)"
+        else:
+            label = f"{t1_label} vs {t2_label} ({cat_label})"
+            
+        m_options[label] = mid
     
     if not m_options:
         st.warning("No matches found. Please check data source.")
