@@ -53,9 +53,9 @@ def load_category_map():
     """Load category map"""
     try:
         # Try both relative and absolute paths if needed, but relative usually works from root
-        path = "data/raw/match_category_map.json"
+        path = "data/processed/game_categorization.json"
         if not os.path.exists(path):
-             path = r"h:\VIBE CODE\ind basketball\data\raw\match_category_map.json"
+             path = r"h:\VIBE CODE\ind basketball\2staging\data\processed\game_categorization.json"
              
         with open(path, "r", encoding='utf-8-sig') as f:
             return json.load(f)

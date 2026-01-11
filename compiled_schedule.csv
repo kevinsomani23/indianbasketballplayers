@@ -65,4 +65,12 @@ Day,Date,Court,Match ID,Team A,Team B,Gender,Group,Time,Score,Genius Match ID
 7,10-Jan-2026,Indoor Court,SF 1,TAMIL NADU,INDIAN RAILWAY,Women,Semifinal,,54-88,2800354.0
 7,10-Jan-2026,Indoor Court,SF 2,MADHYA PRADESH,KERALA,Women,Semifinal,,58-87,2800352.0
 7,10-Jan-2026,Indoor Court,SF 1,DELHI,INDIAN RAILWAY,Men,Semifinal,,53-65,2800362.0
-7,10-Jan-2026,Indoor Court,SF 2,UTTAR PRADESH,TAMIL NADU,Men,Semifinal,,53-102,2800365
+7,10-Jan-2026,Indoor Court,SF 2,UTTAR PRADESH,TAMIL NADU,Men,Semifinal,,53-102,2800365.0
+8,11-Jan-2026,Indoor Court,P7-8 1,DELHI,GUJARAT,Women,Placing 7-8,06:30 AM,,
+8,11-Jan-2026,Indoor Court,P7-8 2,TELANGANA,KERALA,Men,Placing 7-8,08:00 AM,,
+8,11-Jan-2026,Indoor Court,P5-6 1,MAHARASHTRA,KARNATAKA,Women,Placing 5-6,09:30 AM,,
+8,11-Jan-2026,Indoor Court,P5-6 2,RAJASTHAN,KARNATAKA,Men,Placing 5-6,11:00 AM,,
+8,11-Jan-2026,Indoor Court,P3-4 1,MADHYA PRADESH,TAMIL NADU,Women,Placing 3-4,12:30 PM,,
+8,11-Jan-2026,Indoor Court,P3-4 2,UTTAR PRADESH,DELHI,Men,Placing 3-4,02:00 PM,,
+8,11-Jan-2026,Indoor Court,FINAL 1,KERALA,INDIAN RAILWAYS,Women,Final,04:30 PM,,
+8,11-Jan-2026,Indoor Court,FINAL 2,TAMIL NADU,INDIAN RAILWAYS,Men,Final,06:00 PM,,

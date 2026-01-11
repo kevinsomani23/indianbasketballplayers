@@ -49,6 +49,23 @@ class MetricsEngine:
         
         # --- PLAYER AGGREGATION ---
         if entity_type == "Players":
+            # DNP Filter: Remove rows where Minutes=0 and Stats=0
+            # Ensure we only count actual appearances for per-game stats
+            
+            # Key Columns to check for activity (if they had any stat, they played)
+            activity_cols = ["PTS", "REB", "AST", "STL", "BLK", "TOV", "FGA", "FTA", "PF"]
+            check_cols = [c for c in activity_cols if c in df_daily.columns]
+            
+            if "MIN_DEC" in df_daily.columns and check_cols:
+                # Calculate activity sum (absolute values just in case)
+                activity_sum = df_daily[check_cols].abs().sum(axis=1)
+                
+                # Keep row if (Minutes > 0) OR (Activity > 0)
+                # Some box scores might have 0 min but recorded a foul/stat -> Keep.
+                # Some might have 1 min but 00:00 recorded -> Keep if MIN_DEC > 0.
+                mask = (df_daily["MIN_DEC"] > 0) | (activity_sum > 0)
+                df_daily = df_daily[mask]
+
             # PRE-MERGE CLEANUP: Drop conflicting Tm columns from player perfs
             cols_to_drop = [c for c in rename_dict.values() if c in df_daily.columns]
             if cols_to_drop:

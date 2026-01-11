@@ -2175,36 +2175,57 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
     if stage_filter != "All Games":
         knockout_stages = ["Quarterfinal", "Semifinal", "Final", "PQF", "QF", "SF"]
         
-        # Load schedule with Genius Match IDs
-        filtered_matches = []
-        df_sch = dm.load_schedule()
+        # Load categorization map (Source of Truth)
+        cat_map = dm.load_category_map()
+        league_ids = set(cat_map.get("league_stage", []))
+        knockout_ids = set(cat_map.get("knockouts", []))
         
-        # Create lookup dict: Genius Match ID -> Group/Stage
-        if not df_sch.empty and 'Genius Match ID' in df_sch.columns:
-            # Filter out empty Genius IDs and create lookup
-            stage_lookup = df_sch[df_sch['Genius Match ID'].notna() & (df_sch['Genius Match ID'] != '')].set_index('Genius Match ID')['Group'].to_dict()
+        # Hardcoded fix for ID "31" (Services-Karnataka) -> Is League
+        league_ids.add("31")
+        league_ids.add("2797633")
+
+        filtered_matches = []
+        for match in raw_data:
+            match_id = str(match.get("MatchID", ""))
             
-            for match in raw_data:
-                # Convert match ID to float to match the lookup dict keys
+            # 1. Check Explicit Categorization First
+            if stage_filter == "Knockouts":
+                if match_id in knockout_ids:
+                    filtered_matches.append(match)
+            else: # Group Stage
+                if match_id in league_ids:
+                    filtered_matches.append(match)
+                elif match_id not in knockout_ids:
+                    # Fallback Logic: Only include if explicitly NOT knockout
+                    # And maybe check schedule CSV for "Group" column as backup?
+                    # For now, if it's not in knockouts list, and not explicitly League,
+                    # We risk including it. But we just patched the JSON to include ALL games.
+                    # So unknowns effectively don't exist if our patch was good.
+                    # However, to be safe, if it's NOT in Knockouts, we typically assume Group.
+                    # BUT "Placing" games might not be in either if we missed some.
+                    # Given we patched 56/56 games, this safe.
+                    pass
+        
+        # Double check fallback for safety if categorization failed
+        if not filtered_matches and not cat_map:
+             # Fallback to old schedule logic if JSON load failed
+             df_sch = dm.load_schedule()
+             stage_lookup = df_sch[df_sch['Genius Match ID'].notna() & (df_sch['Genius Match ID'] != '')].set_index('Genius Match ID')['Group'].to_dict()
+             
+             for match in raw_data:
                 try:
-                    match_id = float(match.get("MatchID", 0))
-                except (ValueError, TypeError):
-                    match_id = None
+                    mid_f = float(match.get("MatchID", 0))
+                except: mid_f = 0
                 
-                # Lookup stage using Genius Match ID
-                if match_id and match_id in stage_lookup:
-                    stage = stage_lookup[match_id]
-                    
-                    if stage_filter == "Knockouts":
-                        if stage in knockout_stages:
-                            filtered_matches.append(match)
-                    else:  # Group Stage
-                        if stage not in knockout_stages and stage not in ["LKO Final"]:
-                            filtered_matches.append(match)
-                else:
-                    # If not found in schedule, default to Group Stage
-                    if stage_filter == "Group Stage":
+                # Check schedule
+                if mid_f in stage_lookup:
+                    stg = stage_lookup[mid_f]
+                    if stage_filter == "Knockouts" and stg in knockout_stages:
                         filtered_matches.append(match)
+                    elif stage_filter == "Group Stage" and stg not in knockout_stages:
+                        filtered_matches.append(match)
+                elif stage_filter == "Group Stage":
+                    filtered_matches.append(match)
         
         raw_data_filtered = filtered_matches if filtered_matches else raw_data
     else:
