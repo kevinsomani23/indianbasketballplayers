@@ -1,0 +1,320 @@
+{
+  "league_stage": [
+    "2797383",
+    "2797384",
+    "2797387",
+    "2797388",
+    "2797389",
+    "2797390",
+    "2797391",
+    "2797392",
+    "2797632",
+    "2797633",
+    "2797634",
+    "2797635",
+    "2797636",
+    "2797637",
+    "2797638",
+    "2797639",
+    "2798219",
+    "2798220",
+    "2798221",
+    "2798222",
+    "2798223",
+    "2798224",
+    "2798225",
+    "2798226",
+    "2798606",
+    "2798607",
+    "2798608",
+    "2798609",
+    "2798610",
+    "2798611",
+    "2798613",
+    "2798615",
+    "2799691",
+    "2799692",
+    "2799693",
+    "2799698",
+    "2799699",
+    "2799700",
+    "2799701",
+    "2799702"
+  ],
+  "knockouts": [
+    "2800060",
+    "2800061",
+    "2800062",
+    "2800063",
+    "2800065",
+    "2800066",
+    "2800067",
+    "2800068",
+    "2800341",
+    "2800342",
+    "2800352",
+    "2800354",
+    "2800358",
+    "2800361",
+    "2800362",
+    "2800365"
+  ],
+  "missing": [],
+  "details": {
+    "league": [
+      {
+        "MatchID": "2797383",
+        "Group": "A",
+        "Match": "INDIAN RAILWAYS vs DELHI (Women)"
+      },
+      {
+        "MatchID": "2797389",
+        "Group": "A",
+        "Match": "MAHARASHTRA vs KARNATAKA (Women)"
+      },
+      {
+        "MatchID": "2797637",
+        "Group": "A",
+        "Match": "KARNATAKA vs INDIAN RAILWAYS (Women)"
+      },
+      {
+        "MatchID": "2797638",
+        "Group": "A",
+        "Match": "DELHI vs CHHATTISGARH (Women)"
+      },
+      {
+        "MatchID": "2798221",
+        "Group": "A",
+        "Match": "INDIAN RAILWAYS vs MAHARASHTRA (Women)"
+      },
+      {
+        "MatchID": "2798222",
+        "Group": "A",
+        "Match": "CHHATTISGARH vs KARNATAKA (Women)"
+      },
+      {
+        "MatchID": "2798610",
+        "Group": "A",
+        "Match": "CHHATTISGARH vs INDIAN RAILWAYS (Women)"
+      },
+      {
+        "MatchID": "2798611",
+        "Group": "A",
+        "Match": "DELHI vs MAHARASHTRA (Women)"
+      },
+      {
+        "MatchID": "2799691",
+        "Group": "A",
+        "Match": "MAHARASHTRA vs CHHATTISGARH (Women)"
+      },
+      {
+        "MatchID": "2799692",
+        "Group": "A",
+        "Match": "KARNATAKA vs DELHI (Women)"
+      },
+      {
+        "MatchID": "2797387",
+        "Group": "A",
+        "Match": "KARNATAKA vs GUJARAT (Men)"
+      },
+      {
+        "MatchID": "2797391",
+        "Group": "A",
+        "Match": "TAMIL NADU vs RAJASTHAN (Men)"
+      },
+      {
+        "MatchID": "2797635",
+        "Group": "A",
+        "Match": "GUJARAT vs TAMIL NADU (Men)"
+      },
+      {
+        "MatchID": "2798223",
+        "Group": "A",
+        "Match": "KARNATAKA vs RAJASTHAN (Men)"
+      },
+      {
+        "MatchID": "2798607",
+        "Group": "A",
+        "Match": "TAMIL NADU vs KARNATAKA (Men)"
+      },
+      {
+        "MatchID": "2799699",
+        "Group": "A",
+        "Match": "RAJASTHAN vs GUJARAT (Men)"
+      },
+      {
+        "MatchID": "2799700",
+        "Group": "A",
+        "Match": "SERVICES vs TAMIL NADU (Men)"
+      },
+      {
+        "MatchID": "2797388",
+        "Group": "B",
+        "Match": "PUNJAB vs UTTAR PRADESH (Men)"
+      },
+      {
+        "MatchID": "2797392",
+        "Group": "B",
+        "Match": "INDIAN RAILWAYS vs DELHI (Men)"
+      },
+      {
+        "MatchID": "2797632",
+        "Group": "B",
+        "Match": "UTTAR PRADESH vs INDIAN RAILWAYS (Men)"
+      },
+      {
+        "MatchID": "2797634",
+        "Group": "B",
+        "Match": "CHANDIGARH vs DELHI (Men)"
+      },
+      {
+        "MatchID": "2798225",
+        "Group": "B",
+        "Match": "CHANDIGARH vs INDIAN RAILWAYS (Men)"
+      },
+      {
+        "MatchID": "2798226",
+        "Group": "B",
+        "Match": "DELHI vs PUNJAB (Men)"
+      },
+      {
+        "MatchID": "2798608",
+        "Group": "B",
+        "Match": "UTTAR PRADESH vs CHANDIGARH (Men)"
+      },
+      {
+        "MatchID": "2798609",
+        "Group": "B",
+        "Match": "INDIAN RAILWAYS vs PUNJAB (Men)"
+      },
+      {
+        "MatchID": "2799701",
+        "Group": "B",
+        "Match": "DELHI vs UTTAR PRADESH (Men)"
+      },
+      {
+        "MatchID": "2799702",
+        "Group": "B",
+        "Match": "PUNJAB vs CHANDIGARH (Men)"
+      },
+      {
+        "MatchID": "2797384",
+        "Group": "B",
+        "Match": "KERALA vs GUJARAT (Women)"
+      },
+      {
+        "MatchID": "2797390",
+        "Group": "B",
+        "Match": "TAMIL NADU vs MADHYA PRADESH (Women)"
+      },
+      {
+        "MatchID": "2797636",
+        "Group": "B",
+        "Match": "MADHYA PRADESH vs KERALA (Women)"
+      },
+      {
+        "MatchID": "2797639",
+        "Group": "B",
+        "Match": "WEST BENGAL vs TAMIL NADU (Women)"
+      },
+      {
+        "MatchID": "2798219",
+        "Group": "B",
+        "Match": "KERALA vs WEST BENGAL (Women)"
+      },
+      {
+        "MatchID": "2798220",
+        "Group": "B",
+        "Match": "MADHYA PRADESH vs GUJARAT (Women)"
+      },
+      {
+        "MatchID": "2798613",
+        "Group": "B",
+        "Match": "GUJARAT vs WEST BENGAL (Women)"
+      },
+      {
+        "MatchID": "2798615",
+        "Group": "B",
+        "Match": "TAMIL NADU vs KERALA (Women)"
+      },
+      {
+        "MatchID": "2799693",
+        "Group": "B",
+        "Match": "WEST BENGAL vs MADHYA PRADESH (Women)"
+      },
+      {
+        "MatchID": "2799698",
+        "Group": "B",
+        "Match": "GUJARAT vs TAMIL NADU (Women)"
+      }
+    ],
+    "knockouts": [
+      {
+        "MatchID": "2800060",
+        "Stage": "Quarterfinal",
+        "Match": "RAJASTHAN vs UTTAR PRADESH (Men)"
+      },
+      {
+        "MatchID": "2800061",
+        "Stage": "Quarterfinal",
+        "Match": "KARNATAKA vs DELHI (Men)"
+      },
+      {
+        "MatchID": "2800062",
+        "Stage": "Quarterfinal",
+        "Match": "INDIAN RAILWAY vs TELANGANA (Men)"
+      },
+      {
+        "MatchID": "2800063",
+        "Stage": "Quarterfinal",
+        "Match": "TAMIL NADU vs KERALA (Men)"
+      },
+      {
+        "MatchID": "2800065",
+        "Stage": "Quarterfinal",
+        "Match": "KARNATAKA vs MADHYA PRADESH (Women)"
+      },
+      {
+        "MatchID": "2800066",
+        "Stage": "Quarterfinal",
+        "Match": "MAHARASHTRA vs TAMIL NADU (Women)"
+      },
+      {
+        "MatchID": "2800067",
+        "Stage": "Quarterfinal",
+        "Match": "INDIAN RAILWAY vs GUJARAT (Women)"
+      },
+      {
+        "MatchID": "2800068",
+        "Stage": "Quarterfinal",
+        "Match": "KERALA vs DELHI (Women)"
+      },
+      {
+        "MatchID": "2800362",
+        "Stage": "Semifinal",
+        "Match": "DELHI vs INDIAN RAILWAY (Men)"
+      },
+      {
+        "MatchID": "2800365",
+        "Stage": "Semifinal",
+        "Match": "UTTAR PRADESH vs TAMIL NADU (Men)"
+      },
+      {
+        "MatchID": "2800352",
+        "Stage": "Semifinal",
+        "Match": "MADHYA PRADESH vs KERALA (Women)"
+      },
+      {
+        "MatchID": "2800354",
+        "Stage": "Semifinal",
+        "Match": "TAMIL NADU vs INDIAN RAILWAY (Women)"
+      }
+    ]
+  },
+  "2800572": "Knockout",
+  "2800573": "Knockout",
+  "2800574": "Knockout",
+  "2800568": "Knockout",
+  "2800569": "Knockout",
+  "2800570": "Knockout"
+}
