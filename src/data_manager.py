@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 import os
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60)
 def load_data(json_path=None):
     """Load the main JSON data. Trust data.json as source of truth."""
     try:
