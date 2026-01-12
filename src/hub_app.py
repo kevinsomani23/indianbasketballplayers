@@ -2336,30 +2336,36 @@ elif st.session_state.active_tab == "TOURNAMENT STATS":
             if entity_type == "Players" and not df_display.empty:
                 st.markdown("<h4 style='font-family: \"Space Grotesk\", sans-serif; font-size: 1.1rem; margin-bottom: 20px; color: var(--text-secondary);'>TOURNAMENT PERFORMANCE LEADERS</h4>", unsafe_allow_html=True)
                 
+                # Filter for Leaders (Min 3 Games)
+                # This ensures players with 1-2 good games don't skew the top lists
+                df_leaders = df_display.copy()
+                if "GP" in df_leaders.columns:
+                    df_leaders = df_leaders[df_leaders["GP"] >= 3]
+                
                 # Row 1: Primary Stats
                 r1_c1, r1_c2, r1_c3 = st.columns(3)
                 with r1_c1:
-                    ec.create_leader_board(df_display, "PTS", "Scoring Leaders", top_n=5)
+                    ec.create_leader_board(df_leaders, "PTS", "Scoring Leaders", top_n=5)
                 with r1_c2:
-                    if "REB" in df_display.columns:
-                        ec.create_leader_board(df_display, "REB", "Rebound Leaders", top_n=5)
+                    if "REB" in df_leaders.columns:
+                        ec.create_leader_board(df_leaders, "REB", "Rebound Leaders", top_n=5)
                 with r1_c3:
-                    if "AST" in df_display.columns:
-                        ec.create_leader_board(df_display, "AST", "Assist Leaders", top_n=5)
+                    if "AST" in df_leaders.columns:
+                        ec.create_leader_board(df_leaders, "AST", "Assist Leaders", top_n=5)
                 
                 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
                 
                 # Row 2: Secondary/Impact Stats
                 r2_c1, r2_c2, r2_c3 = st.columns(3)
                 with r2_c1:
-                    if "STL" in df_display.columns:
-                        ec.create_leader_board(df_display, "STL", "Steal Leaders", top_n=5)
+                    if "STL" in df_leaders.columns:
+                        ec.create_leader_board(df_leaders, "STL", "Steal Leaders", top_n=5)
                 with r2_c2:
-                    if "BLK" in df_display.columns:
-                        ec.create_leader_board(df_display, "BLK", "Block Leaders", top_n=5)
+                    if "BLK" in df_leaders.columns:
+                        ec.create_leader_board(df_leaders, "BLK", "Block Leaders", top_n=5)
                 with r2_c3:
-                    if "GmScr" in df_display.columns:
-                        ec.create_leader_board(df_display, "GmScr", "Impact (GmScr)", top_n=5)
+                    if "GmScr" in df_leaders.columns:
+                        ec.create_leader_board(df_leaders, "GmScr", "Impact (GmScr)", top_n=5)
             else:
                 st.info("Leader boards available for Players view only")
         
